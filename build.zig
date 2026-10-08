@@ -59,6 +59,7 @@ pub fn build(b: *std.Build) void {
         .root = b.path("reference"),
         .files = &.{
             "shim/texcomp_stubs.c",
+            "shim/texcomp_bc6h_modes.c",
             "texcomp/src/texcomp.c",
             "texcomp/src/texcomp_bc1.c",
             "texcomp/src/texcomp_bc3.c",

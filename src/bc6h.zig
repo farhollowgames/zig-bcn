@@ -8,6 +8,10 @@ const image = @import("image.zig");
 
 pub const block_bytes = 16;
 
+/// The translated encoder's internals, for the differential tests; not a
+/// stable interface.
+pub const texcomp = texcomp_bc6h;
+
 pub const Format = enum {
     /// BC6H_UF16: non-negative values; negatives and NaN encode as 0.
     unsigned,

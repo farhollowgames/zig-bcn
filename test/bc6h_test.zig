@@ -161,3 +161,99 @@ fn logRmse(img: *const images.Hdr, decoded: *const [images.pixel_count][3]u16, f
     };
     return @sqrt(sum / n);
 }
+
+extern fn ref_bc6h_mode(is_signed: c_int, mode: c_int, pix: *const [16][3]f32, out: *[16]u8, err: *u64) c_int;
+extern fn ref_bc6h_block(is_signed: c_int, pix: *const [16][3]f32, out: *[16]u8) void;
+
+/// Fuzz blocks built in the half-float magnitude domain the encoder
+/// quantizes in, so their spreads land on either side of every mode's
+/// delta limits; with sign flips, specials and plain noise mixed in.
+pub fn fuzzBlock(rng: *images.Rng) [16][3]f32 {
+    const scales = [_]u32{ 0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384 };
+    var px: [16][3]f32 = undefined;
+    const family = rng.below(6);
+    const part = bcn.bc6h.texcomp.partition(rng.below(32));
+    const base: i32 = @intCast(rng.below(0x7c00));
+    var center: [2][3]i32 = undefined;
+    var width: [2][3]i32 = undefined;
+    const spread = scales[rng.below(scales.len)];
+    for (0..2) |r| for (0..3) |c| {
+        const s: i32 = @intCast(if (family == 1) scales[rng.below(scales.len)] else spread);
+        center[r][c] = base + if (r == 1) @as(i32, @intCast(rng.below(@intCast(2 * s + 1)))) - s else 0;
+        const ws: i32 = @intCast(scales[rng.below(8)]);
+        width[r][c] = @as(i32, @intCast(rng.below(@intCast(2 * ws + 1)))) - ws;
+    };
+    const noise: i32 = @intCast(scales[rng.below(6)]);
+    const sign_mode = rng.below(4);
+    for (&px, 0..) |*p, i| {
+        const r = if (family == 3) 0 else part[i];
+        const t: i32 = @intCast(rng.below(65));
+        for (0..3) |c| {
+            var mag = center[r][c] + @divTrunc(width[r][c] * t, 64);
+            if (noise > 0) mag += @as(i32, @intCast(rng.below(@intCast(2 * noise + 1)))) - noise;
+            mag = std.math.clamp(mag, 0, 0x7bff);
+            var v = bcn.bc6h.halfToF32(@intCast(mag));
+            switch (sign_mode) {
+                0 => {},
+                1 => if (rng.below(2) == 0) {
+                    v = -v;
+                },
+                2 => if (r == 1) {
+                    v = -v;
+                },
+                else => if (c == 1) {
+                    v = -v;
+                },
+            }
+            p[c] = v;
+        }
+    }
+    switch (family) {
+        4 => { // specials sprinkled in
+            const specials = [_]f32{ std.math.inf(f32), -std.math.inf(f32), std.math.nan(f32), -0.0, 1e30, -1e30, 65504, 65520, 1e-30 };
+            for (0..1 + rng.below(4)) |_| px[rng.below(16)][rng.below(3)] = specials[rng.below(specials.len)];
+        },
+        5 => for (&px) |*p| for (p) |*v| { // plain log noise, either sign
+            v.* = std.math.exp2(-20.0 + 36.0 * rng.unit()) * @as(f32, if (rng.below(3) == 0) -1 else 1);
+        },
+        else => {},
+    }
+    return px;
+}
+
+test "bc6h every mode encoder matches texcomp on fuzz blocks" {
+    var rng: images.Rng = .{ .state = 0xbc6f };
+    var m: common.Mismatches = .{ .label = "bc6h fuzz" };
+    var wins: [2][15]u32 = @splat(@splat(0));
+    var tried: [2][15]u32 = @splat(@splat(0));
+    const count = 20_000;
+    for (0..count) |n| {
+        const px = fuzzBlock(&rng);
+        for (formats, 0..) |format, fi| {
+            const signed = format == .signed;
+            for (0..14) |mode_usize| {
+                const mode: u4 = @intCast(mode_usize);
+                var want: [16]u8 = undefined;
+                var got: [16]u8 = undefined;
+                var want_err: u64 = undefined;
+                const have = ref_bc6h_mode(@intFromBool(signed), mode, &px, &want, &want_err) != 0;
+                const got_err = bcn.bc6h.texcomp.encodeMode(signed, mode, &px, &got);
+                if (have != (got_err != null)) return error.ModeSetDiffers;
+                const ge = got_err orelse continue;
+                const label = if (signed) "sf16 mode" else "uf16 mode";
+                m.check(label, mode, @intCast(n), px, std.mem.asBytes(&want_err), std.mem.asBytes(&ge));
+                if (want_err != bcn.bc6h.texcomp.err_unencodable) {
+                    tried[fi][mode] += 1;
+                    m.check(label, mode, @intCast(n), px, &want, &got);
+                }
+            }
+            var want: [16]u8 = undefined;
+            ref_bc6h_block(@intFromBool(signed), &px, &want);
+            const got = bcn.bc6h.encodeBlock(&px, format);
+            m.check(if (signed) "sf16 block" else "uf16 block", 0, @intCast(n), px, &want, &got);
+            wins[fi][modeOf(&want)] += 1;
+        }
+    }
+    std.debug.print("\nfuzz encodable (uf16): {any}\nfuzz encodable (sf16): {any}\nfuzz wins (uf16): {any}\nfuzz wins (sf16): {any}\n", .{ tried[0], tried[1], wins[0], wins[1] });
+    try m.finish();
+}

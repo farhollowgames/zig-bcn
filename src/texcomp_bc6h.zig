@@ -26,6 +26,7 @@ const assert = std.debug.assert;
 const maxInt = std.math.maxInt;
 
 pub const Pixels = [16][3]f32;
+pub const err_unencodable = err_none;
 pub const Block = [16]u8;
 
 const weights4 = [16]u32{ 0, 4, 9, 13, 17, 21, 26, 30, 34, 38, 43, 47, 51, 55, 60, 64 };
@@ -1288,6 +1289,37 @@ pub fn encodeBlockSf16(pix: *const Pixels) Block {
         inline for (.{ 6, 7, 8 }) |m| keepIfBetter(&best_err, &out, mode678Sf16(pix, m, &tmp), &tmp);
     }
     return out;
+}
+
+/// Runs one mode's encoder alone, as the differential tests do, returning its
+/// error estimate (`maxInt(u64)` when the mode cannot encode the block, and
+/// then `out` is unspecified). Null for a mode the C has no encoder for in
+/// that format: 11 in both, and 10 in signed, whose mode 10 is only the main
+/// encoder's first try.
+pub fn encodeMode(signed: bool, mode: u4, pix: *const Pixels, out: *Block) ?u64 {
+    if (signed) return switch (mode) {
+        0 => mode0(true, pix, out),
+        1 => mode1(true, pix, out),
+        inline 2, 3, 4 => |m| mode234(true, pix, m, out),
+        5 => mode5(true, pix, out),
+        inline 6, 7, 8 => |m| mode678Sf16(pix, m, out),
+        9 => mode9(true, pix, out),
+        12 => mode12Sf16(pix, out),
+        13 => mode13Sf16(pix, out),
+        else => null,
+    };
+    return switch (mode) {
+        0 => mode0(false, pix, out),
+        1 => mode1(false, pix, out),
+        inline 2, 3, 4 => |m| mode234(false, pix, m, out),
+        5 => mode5(false, pix, out),
+        inline 6, 7, 8 => |m| mode678Uf16(pix, m, out),
+        9 => mode9(false, pix, out),
+        10 => mode10Uf16(pix, out),
+        12 => mode12Uf16(pix, out),
+        13 => mode13Uf16(pix, out),
+        else => null,
+    };
 }
 
 test "float to half matches known values" {
