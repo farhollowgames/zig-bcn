@@ -184,7 +184,9 @@ fn expectRmse(name: []const u8, what: []const u8, want: *const [images.pixel_cou
         return error.RoundTrip;
     }
 }
-comptime { std.debug.assert(bc3_rmse_max.len == images.ldr_names.len and bc5_rmse_max.len == images.ldr_names.len); }
+comptime {
+    std.debug.assert(bc3_rmse_max.len == images.ldr_names.len and bc5_rmse_max.len == images.ldr_names.len);
+}
 
 test "bc1 encodes an RGB image like the same pixels made opaque RGBA" {
     var rgb: [images.pixel_count][3]u8 = undefined;

@@ -20,7 +20,7 @@ const levels = std.enums.values(bc7.Level);
 
 fn refParams(level: bc7.Level, perceptual: bool) Params {
     var p: Params = undefined;
-    ref_bc7e_params_init(@intFromEnum(level), @intFromBool(perceptual), &p);
+    ref_bc7e_params_init(@backingInt(level), @intFromBool(perceptual), &p);
     return p;
 }
 
@@ -109,7 +109,7 @@ test "bc7 encodes the image set like bc7e at every level" {
         var m: common.Mismatches = .{ .label = img.name };
         for (levels) |level| for ([_]bool{ false, true }) |perceptual| {
             const params = Params.init(level, perceptual);
-            compareBlocks(img.name, level_names[@intFromEnum(level)], &blocks, &params, &m);
+            compareBlocks(img.name, level_names[@backingInt(level)], &blocks, &params, &m);
 
             // The image path must give the same blocks as the block path.
             bc7.encodeImage(common.ldrView(&img), &encoded, &params);
@@ -308,7 +308,7 @@ test "bc7 encodes crafted blocks like bc7e at every level and setting" {
     var m: common.Mismatches = .{ .label = "crafted" };
     for (levels) |level| for ([_]bool{ false, true }) |perceptual| {
         const params = Params.init(level, perceptual);
-        compareBlocks("crafted", level_names[@intFromEnum(level)], &blocks, &params, &m);
+        compareBlocks("crafted", level_names[@backingInt(level)], &blocks, &params, &m);
     };
     for ([_]bool{ false, true }) |perceptual| {
         for (variants(perceptual)) |variant| compareBlocks("crafted", variant.name, &blocks, &variant.params, &m);

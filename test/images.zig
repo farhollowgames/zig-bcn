@@ -45,10 +45,10 @@ pub const Ldr = struct {
 };
 
 pub const ldr_names = [_][]const u8{
-    "flat_blocks",    "gradients",     "alpha_edges", "punch_alpha",
-    "noise",          "smooth_noise",  "normal_map",  "two_colors",
-    "three_colors",   "low_contrast",  "extremes",    "gray_ramp",
-    "soft_alpha",     "hue_stripes",
+    "flat_blocks",  "gradients",    "alpha_edges", "punch_alpha",
+    "noise",        "smooth_noise", "normal_map",  "two_colors",
+    "three_colors", "low_contrast", "extremes",    "gray_ramp",
+    "soft_alpha",   "hue_stripes",
 };
 
 pub fn ldr(index: usize) Ldr {
