@@ -9,12 +9,14 @@ const image = @import("image.zig");
 
 pub const block_bytes = 16;
 pub const Quality = stb_dxt.Quality;
+pub const Rounding = stb_dxt.Rounding;
+pub const Settings = stb_dxt.Settings;
 
 /// Encodes 16 RGBA pixels: a BC4 alpha block followed by a BC1 colour block.
-pub fn encodeBlock(pixels: *const [16][4]u8, quality: Quality) [block_bytes]u8 {
+pub fn encodeBlock(pixels: *const [16][4]u8, settings: Settings) [block_bytes]u8 {
     var alpha: [16]u8 = undefined;
     for (pixels, &alpha) |p, *a| a.* = p[3];
-    return stb_dxt.encodeAlphaBlock(&alpha) ++ stb_dxt.encodeColorBlock(pixels, quality);
+    return stb_dxt.encodeAlphaBlock(&alpha) ++ stb_dxt.encodeColorBlock(pixels, settings);
 }
 
 pub fn decodeBlock(block: *const [block_bytes]u8) [16][4]u8 {
@@ -26,13 +28,13 @@ pub fn decodeBlock(block: *const [block_bytes]u8) [16][4]u8 {
 
 /// Encodes an RGBA image into `dst`, which must hold
 /// `image.encodedLen(block_bytes, width, height)` bytes.
-pub fn encodeImage(src: image.Image(u8), dst: []u8, quality: Quality) void {
+pub fn encodeImage(src: image.Image(u8), dst: []u8, settings: Settings) void {
     src.check();
     assert(src.channels == 4);
-    const Ctx = struct { src: image.Image(u8), quality: Quality };
-    image.encodeBlocks(block_bytes, src.width, src.height, dst, Ctx{ .src = src, .quality = quality }, struct {
+    const Ctx = struct { src: image.Image(u8), settings: Settings };
+    image.encodeBlocks(block_bytes, src.width, src.height, dst, Ctx{ .src = src, .settings = settings }, struct {
         fn f(ctx: Ctx, bx: u32, by: u32) [block_bytes]u8 {
-            return encodeBlock(&ctx.src.block(4, bx, by), ctx.quality);
+            return encodeBlock(&ctx.src.block(4, bx, by), ctx.settings);
         }
     }.f);
 }

@@ -15,14 +15,30 @@ pub const Quality = enum(u1) {
     high,
 };
 
+/// How the encoder expects decoders to interpolate the two middle colours.
+pub const Rounding = enum(u1) {
+    /// Truncating, as the S3TC and DX10 specifications define it; AMD, S3
+    /// and the DX10 reference rasterizer decode this way.
+    spec,
+    /// With a rounding bias, closer to ideal interpolation; NVIDIA and Intel
+    /// GPUs of about 2010 and the DX9 reference decode closer to this. This is
+    /// stb_dxt's STB_DXT_USE_ROUNDING_BIAS.
+    biased,
+};
+
+pub const Settings = struct {
+    quality: Quality = .normal,
+    rounding: Rounding = .spec,
+};
+
 /// Encodes the RGB of 16 pixels (row-major) as a BC1 colour block. Alpha is
 /// ignored: the block is always opaque.
-pub fn encodeColorBlock(pixels: *const [16][4]u8, quality: Quality) [8]u8 {
+pub fn encodeColorBlock(pixels: *const [16][4]u8, settings: Settings) [8]u8 {
     // stb_dxt detects a constant block by comparing whole pixels, alpha
     // included, and expects a constant alpha; an opaque copy gives it one.
     var opaque_pixels = pixels.*;
     for (&opaque_pixels) |*p| p[3] = 255;
-    return compressColorBlock(&opaque_pixels, quality);
+    return compressColorBlock(&opaque_pixels, settings);
 }
 
 /// Encodes 16 single-channel values as a BC4 block (also the alpha half of
@@ -141,24 +157,26 @@ fn as16Bit(r: i32, g: i32, b: i32) u16 {
     return @intCast((mul8Bit(r, 31) << 11) + (mul8Bit(g, 63) << 5) + mul8Bit(b, 31));
 }
 
-/// The point a third of the way from a to b, truncated: the S3TC and DX10
-/// rule, without the rounding bias some older hardware used.
-fn lerp13(a: i32, b: i32) i32 {
-    assert(a >= 0 and b >= 0);
-    return @divTrunc(2 * a + b, 3);
+/// The point a third of the way from a to b, as `rounding` decodes it.
+fn lerp13(a: i32, b: i32, rounding: Rounding) i32 {
+    assert(a >= 0 and a <= 255 and b >= 0 and b <= 255);
+    return switch (rounding) {
+        .spec => @divTrunc(2 * a + b, 3),
+        .biased => a + mul8Bit(b - a, 0x55),
+    };
 }
 
-fn lerp13Rgb(p1: [3]u8, p2: [3]u8) [3]u8 {
+fn lerp13Rgb(p1: [3]u8, p2: [3]u8, rounding: Rounding) [3]u8 {
     var out: [3]u8 = undefined;
-    for (0..3) |c| out[c] = @intCast(lerp13(p1[c], p2[c]));
+    for (0..3) |c| out[c] = @intCast(lerp13(p1[c], p2[c], rounding));
     return out;
 }
 
 /// The four palette colours of a 4-colour block, as stb orders them.
-fn evalColors(c0: u16, c1: u16) [4][3]u8 {
+fn evalColors(c0: u16, c1: u16, rounding: Rounding) [4][3]u8 {
     const a = from16Bit(c0);
     const b = from16Bit(c1);
-    return .{ a, b, lerp13Rgb(a, b), lerp13Rgb(b, a) };
+    return .{ a, b, lerp13Rgb(a, b, rounding), lerp13Rgb(b, a, rounding) };
 }
 
 fn matchColorsBlock(block: *const [16][4]u8, color: *const [4][3]u8) u32 {
@@ -386,8 +404,8 @@ fn refineBlock(block: *const [16][4]u8, endpoints: *Endpoints, mask: u32) bool {
     return old.min16 != new.min16 or old.max16 != new.max16;
 }
 
-fn compressColorBlock(block: *const [16][4]u8, quality: Quality) [8]u8 {
-    const refine_count: u32 = switch (quality) {
+fn compressColorBlock(block: *const [16][4]u8, settings: Settings) [8]u8 {
+    const refine_count: u32 = switch (settings.quality) {
         .normal => 1,
         .high => 2,
     };
@@ -406,7 +424,7 @@ fn compressColorBlock(block: *const [16][4]u8, quality: Quality) [8]u8 {
         // Principal axis first, then least squares refinement.
         ep = optimizeColorsBlock(block);
         if (ep.max16 != ep.min16) {
-            const color = evalColors(ep.max16, ep.min16);
+            const color = evalColors(ep.max16, ep.min16, settings.rounding);
             mask = matchColorsBlock(block, &color);
         } else {
             mask = 0;
@@ -416,7 +434,7 @@ fn compressColorBlock(block: *const [16][4]u8, quality: Quality) [8]u8 {
             const last_mask = mask;
             if (refineBlock(block, &ep, mask)) {
                 if (ep.max16 != ep.min16) {
-                    const color = evalColors(ep.max16, ep.min16);
+                    const color = evalColors(ep.max16, ep.min16, settings.rounding);
                     mask = matchColorsBlock(block, &color);
                 } else {
                     mask = 0;
