@@ -14,9 +14,7 @@ pub const Settings = stb_dxt.Settings;
 
 /// Encodes 16 RGBA pixels: a BC4 alpha block followed by a BC1 colour block.
 pub fn encodeBlock(pixels: *const [16][4]u8, settings: Settings) [block_bytes]u8 {
-    var alpha: [16]u8 = undefined;
-    for (pixels, &alpha) |p, *a| a.* = p[3];
-    return stb_dxt.encodeAlphaBlock(&alpha) ++ stb_dxt.encodeColorBlock(pixels, settings);
+    return stb_dxt.encodeAlphaColorBlock(pixels, settings);
 }
 
 pub fn decodeBlock(block: *const [block_bytes]u8) [16][4]u8 {

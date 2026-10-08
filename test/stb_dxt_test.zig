@@ -65,7 +65,7 @@ test "bc1 and bc3 encode like stb_dxt" {
                     m3.check(settingsName("bc3", settings), @intCast(bx), @intCast(by), px, &want3, zig_bc3[bi * 16 ..][0..16]);
                 }
 
-                // stb_dxt wants a constant alpha for BC1; the port forces it opaque.
+                // encodeImage makes BC1 pixels opaque, as stb asks for a constant alpha.
                 for (&px) |*p| p[3] = 255;
                 for (stbModes(settings.quality)) |mode| {
                     var want1: [8]u8 = undefined;
@@ -302,7 +302,8 @@ test "crafted blocks encode like stb_dxt" {
         stb_compress_bc5_block(&want5, @ptrCast(&rg));
         m.check("bc5", @intCast(i), 0, rg, &want5, &bcn.bc5.encodeBlock(&rg));
 
-        for (&px) |*p| p[3] = 255;
+        // BC1 blocks keep their alpha, varying or not, to show the block
+        // encoder matches stb even where stb asks for a constant alpha.
         for (all_settings) |settings| {
             var want1: [8]u8 = undefined;
             stbDxt(&want1, @ptrCast(&px), 0, stbModes(settings.quality)[0], settings.rounding);

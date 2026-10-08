@@ -31,14 +31,24 @@ pub const Settings = struct {
     rounding: Rounding = .spec,
 };
 
-/// Encodes the RGB of 16 pixels (row-major) as a BC1 colour block. Alpha is
-/// ignored: the block is always opaque.
+/// Encodes the RGB of 16 pixels (row-major) as a 4-colour BC1 colour block,
+/// as stb_compress_dxt_block does without alpha. Alpha is not stored, but
+/// stb compares whole pixels to detect a constant block, so a varying alpha
+/// can change the result; stb asks for a constant alpha.
 pub fn encodeColorBlock(pixels: *const [16][4]u8, settings: Settings) [8]u8 {
-    // stb_dxt detects a constant block by comparing whole pixels, alpha
-    // included, and expects a constant alpha; an opaque copy gives it one.
+    return compressColorBlock(pixels, settings);
+}
+
+/// Encodes 16 RGBA pixels as a BC3 block, as stb_compress_dxt_block does
+/// with alpha: the alpha block, then the colour block of the pixels made
+/// opaque.
+pub fn encodeAlphaColorBlock(pixels: *const [16][4]u8, settings: Settings) [16]u8 {
+    var alpha: [16]u8 = undefined;
+    for (pixels, &alpha) |p, *a| a.* = p[3];
+    // The copy is opaque because the constant-block test compares alpha too.
     var opaque_pixels = pixels.*;
     for (&opaque_pixels) |*p| p[3] = 255;
-    return compressColorBlock(&opaque_pixels, settings);
+    return compressAlphaBlock(&alpha) ++ compressColorBlock(&opaque_pixels, settings);
 }
 
 /// Encodes 16 single-channel values as a BC4 block (also the alpha half of
@@ -516,4 +526,39 @@ fn compressAlphaBlock(src: *const [16]u8) [8]u8 {
     }
     assert(out == 8);
     return dest;
+}
+
+/// stb_dxt's STB_DXT_GENERATE_TABLES program: the optimal endpoint pair for
+/// each 8-bit value of a single-colour block. The decode error counts 100
+/// per step, plus 3 per step of endpoint distance, since DX10 lets hardware
+/// interpolate up to 3 percent off.
+fn generateOMatch(comptime size: u32, comptime dequant: i32) [256][2]u8 {
+    @setEvalBranchQuota(10_000_000);
+    var table: [256][2]u8 = undefined;
+    for (&table, 0..) |*entry, j| {
+        var best_mn: u32 = 0;
+        var best_mx: u32 = 0;
+        var best_err: i32 = 256 * 100;
+        for (0..size) |mn| {
+            for (0..size) |mx| {
+                const mine = (@as(i32, @intCast(mn)) * dequant) >> 4;
+                const maxe = (@as(i32, @intCast(mx)) * dequant) >> 4;
+                var err: i32 = @intCast(@abs(lerp13(maxe, mine, .spec) - @as(i32, @intCast(j))) * 100);
+                err += @intCast(@abs(maxe - mine) * 3);
+                if (err < best_err) {
+                    best_mn = @intCast(mn);
+                    best_mx = @intCast(mx);
+                    best_err = err;
+                }
+            }
+        }
+        entry.* = .{ @intCast(best_mx), @intCast(best_mn) };
+    }
+    return table;
+}
+
+test "the single-colour tables are what stb's generator produces" {
+    // .4 fixed-point dequantization multipliers, as in the generator.
+    try std.testing.expectEqual(omatch5, generateOMatch(32, 33 * 4));
+    try std.testing.expectEqual(omatch6, generateOMatch(64, 65));
 }

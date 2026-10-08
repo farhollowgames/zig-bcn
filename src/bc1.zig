@@ -10,8 +10,11 @@ pub const Quality = stb_dxt.Quality;
 pub const Rounding = stb_dxt.Rounding;
 pub const Settings = stb_dxt.Settings;
 
-/// Encodes 16 RGBA pixels (row-major); alpha is ignored and the block always
-/// decodes opaque.
+/// Encodes 16 RGBA pixels (row-major) as an opaque block, exactly as
+/// stb_compress_dxt_block without alpha. Alpha is not stored, but give a
+/// constant alpha (any value): stb compares whole pixels to find constant
+/// blocks, so a varying alpha can change the result. `encodeImage` makes
+/// pixels opaque first.
 pub fn encodeBlock(pixels: *const [16][4]u8, settings: Settings) [block_bytes]u8 {
     return stb_dxt.encodeColorBlock(pixels, settings);
 }
@@ -67,8 +70,9 @@ fn unpack565(c: u16) [3]u8 {
     return .{ (r << 3) | (r >> 2), (g << 2) | (g >> 4), (b << 3) | (b >> 2) };
 }
 
-/// Encodes an image of at least 3 channels (RGB or RGBA) into `dst`, which
-/// must hold `image.encodedLen(block_bytes, width, height)` bytes.
+/// Encodes the RGB of an image of at least 3 channels into `dst`, which must
+/// hold `image.encodedLen(block_bytes, width, height)` bytes. Any alpha is
+/// ignored.
 pub fn encodeImage(src: image.Image(u8), dst: []u8, settings: Settings) void {
     src.check();
     assert(src.channels >= 3);
@@ -76,11 +80,8 @@ pub fn encodeImage(src: image.Image(u8), dst: []u8, settings: Settings) void {
     image.encodeBlocks(block_bytes, src.width, src.height, dst, Ctx{ .src = src, .settings = settings }, struct {
         fn f(ctx: Ctx, bx: u32, by: u32) [block_bytes]u8 {
             var px: [16][4]u8 = undefined;
-            if (ctx.src.channels == 3) {
-                for (ctx.src.block(3, bx, by), &px) |rgb, *p| p.* = .{ rgb[0], rgb[1], rgb[2], 255 };
-            } else {
-                px = ctx.src.block(4, bx, by);
-            }
+            // Opaque, since BC1 stores no alpha and stb wants it constant.
+            for (ctx.src.block(3, bx, by), &px) |rgb, *p| p.* = .{ rgb[0], rgb[1], rgb[2], 255 };
             return encodeBlock(&px, ctx.settings);
         }
     }.f);
