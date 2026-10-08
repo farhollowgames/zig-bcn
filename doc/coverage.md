@@ -29,7 +29,7 @@ check until the rule is updated.
 
 ```sh
 zig build test       # byte-for-byte differential tests
-zig build coverage   # the same tests, instrumented; fails if coverage drops
+zig build coverage   # the same tests, instrumented; fails if coverage differs from the rules
 ```
 
 `zig build coverage` needs `clang`, `clang++`, `llvm-profdata` and `llvm-cov`
@@ -37,6 +37,36 @@ from one LLVM release on the `PATH` (it was set up with LLVM 23). It prints a
 per-file summary and writes to `zig-out/coverage/`: `report.txt`,
 `functions.txt` (per function) and `show/` (per-line counts; uncovered lines
 have a count of 0 and missed branch directions show `: 0]`).
+
+## Recorded run
+
+The originals are pinned (see `reference/README.md`) and do not change, so
+this is a one-time proof, kept out of CI. Run it again after changing the
+tests or moving to a new version of an original.
+
+Run on 8 October 2026 with LLVM 23.1.1 on x86-64 Linux, at the merge of
+the BC7 and BC6H ports (`47380c7`, with formatting only after it):
+
+```
+Filename                            Functions  Missed  Executed   Lines  Missed   Cover  Branches  Missed   Cover
+stb/stb_dxt.h                              16       0   100.00%     318       0 100.00%        98       0 100.00%
+bc7e/basisu_bc7e_scalar.cpp                86      10    88.37%    3592     112  96.88%      1314     119  90.94%
+texcomp/src/texcomp_bc6h.c                 54       0   100.00%    3024      33  98.91%      2044     118  94.23%
+texcomp/src/texcomp_bc6h_decode.c          11       0   100.00%     529       3  99.43%       154      14  90.91%
+coverage: every required function is covered as declared
+```
+
+The files not shown (texcomp's BC1, BC3, BC5 and BC7 sources) also hold
+encoders zig-bcn does not port; only their decoders are required, as
+declared below. bc7e's ten unexecuted functions are helpers the original
+never calls.
+
+The same day, the reference was also built with
+`-fsanitize=float-cast-overflow,undefined -fsanitize-trap=all`, so any
+undefined behaviour would stop the run: every differential test passed.
+The tests therefore never reach the out-of-range float-to-int casts bc7e
+could perform in principle, and texcomp's int32 overflow is defined by
+`-fwrapv` (see BC6H below).
 
 ## Status
 
