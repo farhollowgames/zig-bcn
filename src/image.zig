@@ -109,47 +109,71 @@ pub fn encodedLen(block_bytes: u32, width: u32, height: u32) usize {
     return @as(usize, blocksWide(width)) * blocksHigh(height) * block_bytes;
 }
 
-/// Encodes every block of `src` into `dst` in row-major block order with
-/// `encode(context, bx, by) [block_bytes]u8`.
+/// A band of block rows, the unit for encoding or decoding part of an image,
+/// for example one band per thread. Each block row is 4 pixel rows.
+pub const BlockRows = struct {
+    first: u32,
+    count: u32,
+
+    /// Every block row of an image `height` pixels high.
+    pub fn all(height: u32) BlockRows {
+        return .{ .first = 0, .count = blocksHigh(height) };
+    }
+
+    pub fn check(rows: BlockRows, height: u32) void {
+        assert(rows.count > 0);
+        assert(rows.first + rows.count <= blocksHigh(height));
+    }
+};
+
+/// Encodes the blocks of `rows` into their place in `dst`, which holds the
+/// whole image's blocks in row-major order, with
+/// `encode(context, bx, by) [block_bytes]u8`. Bands write disjoint parts of
+/// `dst`, so threads may encode different bands of one buffer at once.
 pub fn encodeBlocks(
     comptime block_bytes: u32,
     width: u32,
     height: u32,
     dst: []u8,
+    rows: BlockRows,
     context: anytype,
     comptime encode: fn (@TypeOf(context), u32, u32) [block_bytes]u8,
 ) void {
-    const len = encodedLen(block_bytes, width, height);
-    assert(dst.len >= len);
-    var at: usize = 0;
-    for (0..blocksHigh(height)) |by| {
+    rows.check(height);
+    assert(dst.len >= encodedLen(block_bytes, width, height));
+    const row_bytes = @as(usize, blocksWide(width)) * block_bytes;
+    var at: usize = rows.first * row_bytes;
+    for (rows.first..rows.first + rows.count) |by| {
         for (0..blocksWide(width)) |bx| {
             dst[at..][0..block_bytes].* = encode(context, @intCast(bx), @intCast(by));
             at += block_bytes;
         }
     }
-    assert(at == len);
+    assert(at == (rows.first + rows.count) * row_bytes);
 }
 
-/// Decodes every block of `src` with `decode(context, block, bx, by)`.
+/// Decodes the blocks of `rows` from their place in `src`, which holds the
+/// whole image's blocks, with `decode(context, block, bx, by)`.
 pub fn decodeBlocks(
     comptime block_bytes: u32,
     width: u32,
     height: u32,
     src: []const u8,
+    rows: BlockRows,
     context: anytype,
     comptime decode: fn (@TypeOf(context), *const [block_bytes]u8, u32, u32) void,
 ) void {
-    const len = encodedLen(block_bytes, width, height);
-    assert(src.len >= len);
-    var at: usize = 0;
-    for (0..blocksHigh(height)) |by| {
+    rows.check(height);
+    assert(src.len >= encodedLen(block_bytes, width, height));
+    const row_bytes = @as(usize, blocksWide(width)) * block_bytes;
+    var at: usize = rows.first * row_bytes;
+    for (rows.first..rows.first + rows.count) |by| {
         for (0..blocksWide(width)) |bx| {
             decode(context, src[at..][0..block_bytes], @intCast(bx), @intCast(by));
             at += block_bytes;
         }
     }
-    assert(at == len);
+    assert(at == (rows.first + rows.count) * row_bytes);
 }
 
 test "blocks round up and clamp at the edges" {

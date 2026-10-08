@@ -36,10 +36,15 @@ pub fn encodeBlock(pixels: *const [16][3]f32, format: Format) [block_bytes]u8 {
 /// Encodes the first three channels of `src` into `dst`, which must hold
 /// `image.encodedLen(block_bytes, width, height)` bytes.
 pub fn encodeImage(src: image.Image(f32), dst: []u8, format: Format) void {
+    encodeImageRows(src, dst, format, image.BlockRows.all(src.height));
+}
+
+/// `encodeImage` for the block rows `rows` only; see `image.BlockRows`.
+pub fn encodeImageRows(src: image.Image(f32), dst: []u8, format: Format, rows: image.BlockRows) void {
     src.check();
     assert(src.channels >= 3);
     const Ctx = struct { src: image.Image(f32), format: Format };
-    image.encodeBlocks(block_bytes, src.width, src.height, dst, Ctx{ .src = src, .format = format }, struct {
+    image.encodeBlocks(block_bytes, src.width, src.height, dst, rows, Ctx{ .src = src, .format = format }, struct {
         fn f(ctx: Ctx, bx: u32, by: u32) [block_bytes]u8 {
             return encodeBlock(&ctx.src.block(3, bx, by), ctx.format);
         }
@@ -48,10 +53,15 @@ pub fn encodeImage(src: image.Image(f32), dst: []u8, format: Format) void {
 
 /// Decodes into the first three channels of `dst` as half-float bits.
 pub fn decodeImage(src: []const u8, dst: image.ImageMut(u16), format: Format) void {
+    decodeImageRows(src, dst, format, image.BlockRows.all(dst.height));
+}
+
+/// `decodeImage` for the block rows `rows` only; see `image.BlockRows`.
+pub fn decodeImageRows(src: []const u8, dst: image.ImageMut(u16), format: Format, rows: image.BlockRows) void {
     dst.check();
     assert(dst.channels >= 3);
     const Ctx = struct { dst: image.ImageMut(u16), format: Format };
-    image.decodeBlocks(block_bytes, dst.width, dst.height, src, Ctx{ .dst = dst, .format = format }, struct {
+    image.decodeBlocks(block_bytes, dst.width, dst.height, src, rows, Ctx{ .dst = dst, .format = format }, struct {
         fn f(ctx: Ctx, block: *const [block_bytes]u8, bx: u32, by: u32) void {
             ctx.dst.putBlock(3, bx, by, &decodeBlock(block, ctx.format));
         }
@@ -61,10 +71,15 @@ pub fn decodeImage(src: []const u8, dst: image.ImageMut(u16), format: Format) vo
 /// Decodes into float RGB or RGBA (`dst.channels` 3 or 4; BC6H has no
 /// alpha, so a fourth channel is 1).
 pub fn decodeImageF32(src: []const u8, dst: image.ImageMut(f32), format: Format) void {
+    decodeImageF32Rows(src, dst, format, image.BlockRows.all(dst.height));
+}
+
+/// `decodeImageF32` for the block rows `rows` only; see `image.BlockRows`.
+pub fn decodeImageF32Rows(src: []const u8, dst: image.ImageMut(f32), format: Format, rows: image.BlockRows) void {
     dst.check();
     assert(dst.channels == 3 or dst.channels == 4);
     const Ctx = struct { dst: image.ImageMut(f32), format: Format };
-    image.decodeBlocks(block_bytes, dst.width, dst.height, src, Ctx{ .dst = dst, .format = format }, struct {
+    image.decodeBlocks(block_bytes, dst.width, dst.height, src, rows, Ctx{ .dst = dst, .format = format }, struct {
         fn f(ctx: Ctx, block: *const [block_bytes]u8, bx: u32, by: u32) void {
             const halves = decodeBlock(block, ctx.format);
             var px: [16][4]f32 = undefined;
