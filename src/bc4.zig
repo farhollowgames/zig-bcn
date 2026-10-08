@@ -40,8 +40,13 @@ pub fn decodeBlock(block: *const [block_bytes]u8) [16]u8 {
 /// Encodes channel 0 of `src` into `dst`, which must hold
 /// `image.encodedLen(block_bytes, width, height)` bytes.
 pub fn encodeImage(src: image.Image(u8), dst: []u8) void {
+    encodeImageRows(src, dst, image.BlockRows.all(src.height));
+}
+
+/// `encodeImage` for the block rows `rows` only; see `image.BlockRows`.
+pub fn encodeImageRows(src: image.Image(u8), dst: []u8, rows: image.BlockRows) void {
     src.check();
-    image.encodeBlocks(block_bytes, src.width, src.height, dst, src, struct {
+    image.encodeBlocks(block_bytes, src.width, src.height, dst, rows, src, struct {
         fn f(s: image.Image(u8), bx: u32, by: u32) [block_bytes]u8 {
             const b = s.block(1, bx, by);
             var values: [16]u8 = undefined;
@@ -53,8 +58,13 @@ pub fn encodeImage(src: image.Image(u8), dst: []u8) void {
 
 /// Decodes into channel 0 of `dst`; other channels are left untouched.
 pub fn decodeImage(src: []const u8, dst: image.ImageMut(u8)) void {
+    decodeImageRows(src, dst, image.BlockRows.all(dst.height));
+}
+
+/// `decodeImage` for the block rows `rows` only; see `image.BlockRows`.
+pub fn decodeImageRows(src: []const u8, dst: image.ImageMut(u8), rows: image.BlockRows) void {
     dst.check();
-    image.decodeBlocks(block_bytes, dst.width, dst.height, src, dst, struct {
+    image.decodeBlocks(block_bytes, dst.width, dst.height, src, rows, dst, struct {
         fn f(out: image.ImageMut(u8), block: *const [block_bytes]u8, bx: u32, by: u32) void {
             const values = decodeBlock(block);
             var px: [16][1]u8 = undefined;

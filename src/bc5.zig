@@ -29,9 +29,14 @@ pub fn decodeBlock(block: *const [block_bytes]u8) [16][2]u8 {
 /// Encodes channels 0 and 1 of `src` into `dst`, which must hold
 /// `image.encodedLen(block_bytes, width, height)` bytes.
 pub fn encodeImage(src: image.Image(u8), dst: []u8) void {
+    encodeImageRows(src, dst, image.BlockRows.all(src.height));
+}
+
+/// `encodeImage` for the block rows `rows` only; see `image.BlockRows`.
+pub fn encodeImageRows(src: image.Image(u8), dst: []u8, rows: image.BlockRows) void {
     src.check();
     assert(src.channels >= 2);
-    image.encodeBlocks(block_bytes, src.width, src.height, dst, src, struct {
+    image.encodeBlocks(block_bytes, src.width, src.height, dst, rows, src, struct {
         fn f(s: image.Image(u8), bx: u32, by: u32) [block_bytes]u8 {
             return encodeBlock(&s.block(2, bx, by));
         }
@@ -40,9 +45,14 @@ pub fn encodeImage(src: image.Image(u8), dst: []u8) void {
 
 /// Decodes into channels 0 and 1 of `dst`; other channels are left untouched.
 pub fn decodeImage(src: []const u8, dst: image.ImageMut(u8)) void {
+    decodeImageRows(src, dst, image.BlockRows.all(dst.height));
+}
+
+/// `decodeImage` for the block rows `rows` only; see `image.BlockRows`.
+pub fn decodeImageRows(src: []const u8, dst: image.ImageMut(u8), rows: image.BlockRows) void {
     dst.check();
     assert(dst.channels >= 2);
-    image.decodeBlocks(block_bytes, dst.width, dst.height, src, dst, struct {
+    image.decodeBlocks(block_bytes, dst.width, dst.height, src, rows, dst, struct {
         fn f(out: image.ImageMut(u8), block: *const [block_bytes]u8, bx: u32, by: u32) void {
             out.putBlock(2, bx, by, &decodeBlock(block));
         }

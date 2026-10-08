@@ -69,6 +69,23 @@ Each format module (`bc1`, `bc3`, `bc4`, `bc5`, `bc6h`, `bc7`) has:
 - `block_bytes`, with `bcn.encodedLen(block_bytes, width, height)` for the
   output size.
 
+For tools that pick the format at run time, such as a bake step,
+`bcn.Encoding` puts every format and its settings behind one interface,
+with the Vulkan and DXGI format numbers of the result. It can split an
+image into bands of block rows and encode them on several threads through
+`std.Io`; the bytes are the same however the work is split:
+
+```zig
+const encoding: bcn.Encoding = .{ .bc7 = bcn.bc7.Params.init(.slow, true) };
+const src: bcn.Source = .{ .unorm8 = bcn.Image(u8).init(rgba, width, height, 4) };
+const blocks = try gpa.alloc(u8, encoding.encodedLen(width, height));
+try bcn.encodeImageParallel(io, &encoding, src, blocks, 4); // 4 block rows per task
+const vk_format = encoding.vulkanFormat(true).?; // VK_FORMAT_BC7_SRGB_BLOCK
+```
+
+`encodeImageRows` and each format's `encodeImageRows` and `decodeImageRows`
+take a `bcn.BlockRows` band, for callers with their own job system.
+
 Format specifics:
 
 - **BC1 and BC3** take `Settings{ .quality, .rounding }`. `rounding = .biased`
@@ -115,7 +132,9 @@ aimed at paths images rarely reach.
 
 ## Quality and speed
 
-The encoders keep their originals' quality and speed. The BC7 port runs at
+The encoders keep their originals' quality and speed, per core; encoding
+in bands scales with the cores (BC7 `basic` on a 1024 x 1024 image: 1.05 s
+on one thread, 62 ms on 32). The BC7 port runs at
 1.0 to 1.25 times the scalar C++'s time per block. The BC6H port runs at
 the speed of texcomp's scalar C (texcomp's AVX2 build is about 2.7 times
 faster).

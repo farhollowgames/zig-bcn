@@ -54,11 +54,16 @@ pub fn encodeBlockSingleMode(pixels: *const [16][4]u8, params: *const Params, si
 /// Encodes an RGB (3 channels, opaque) or RGBA image into `dst`, which must
 /// hold `image.encodedLen(block_bytes, width, height)` bytes.
 pub fn encodeImage(src: image.Image(u8), dst: []u8, params: *const Params) void {
+    encodeImageRows(src, dst, params, image.BlockRows.all(src.height));
+}
+
+/// `encodeImage` for the block rows `rows` only; see `image.BlockRows`.
+pub fn encodeImageRows(src: image.Image(u8), dst: []u8, params: *const Params, rows: image.BlockRows) void {
     src.check();
     assert(src.channels >= 3);
     params.check();
     const Ctx = struct { src: image.Image(u8), params: *const Params };
-    image.encodeBlocks(block_bytes, src.width, src.height, dst, Ctx{ .src = src, .params = params }, struct {
+    image.encodeBlocks(block_bytes, src.width, src.height, dst, rows, Ctx{ .src = src, .params = params }, struct {
         fn f(ctx: Ctx, bx: u32, by: u32) [block_bytes]u8 {
             var px: [16][4]u8 = undefined;
             if (ctx.src.channels == 3) {
@@ -73,9 +78,14 @@ pub fn encodeImage(src: image.Image(u8), dst: []u8, params: *const Params) void 
 
 /// Decodes into an RGBA image of the same size the data was encoded from.
 pub fn decodeImage(src: []const u8, dst: image.ImageMut(u8)) void {
+    decodeImageRows(src, dst, image.BlockRows.all(dst.height));
+}
+
+/// `decodeImage` for the block rows `rows` only; see `image.BlockRows`.
+pub fn decodeImageRows(src: []const u8, dst: image.ImageMut(u8), rows: image.BlockRows) void {
     dst.check();
     assert(dst.channels == 4);
-    image.decodeBlocks(block_bytes, dst.width, dst.height, src, dst, struct {
+    image.decodeBlocks(block_bytes, dst.width, dst.height, src, rows, dst, struct {
         fn f(out: image.ImageMut(u8), block: *const [block_bytes]u8, bx: u32, by: u32) void {
             out.putBlock(4, bx, by, &decodeBlock(block));
         }
