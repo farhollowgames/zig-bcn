@@ -1,5 +1,9 @@
 # Coverage and equivalence
 
+`doc/parity.md` lists every feature of the originals and the test that
+compares it. This file covers the supporting check: that those tests reach
+every line and branch of the translated code.
+
 zig-bcn's encoders are translations, so the question a test has to answer is
 whether the Zig produces the same bytes as the original for every input the
 original handles. Two checks answer it together:
@@ -38,7 +42,7 @@ have a count of 0 and missed branch directions show `: 0]`).
 
 | original | translated code covered | byte-identical on |
 | --- | --- | --- |
-| `stb_dxt.h` (BC1, BC3, BC4, BC5), both rounding builds | every function, line and branch | 14 images × 4 settings × 2 stb modes, 200,000 crafted blocks × 4 settings |
+| `stb_dxt.h` (BC1, BC3, BC4, BC5), both rounding builds | every function, line and branch | 14 images × 4 settings × 2 stb modes, 200,000 crafted blocks × 4 settings, varying alpha included |
 | texcomp BC1, BC3, BC4, BC5 decoders | every line and branch of the block decoders; the image decoders as declared below | 20,000 random blocks; random streams at five sizes with a wide stride |
 
 ## Declared gaps
