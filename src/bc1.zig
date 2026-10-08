@@ -7,11 +7,13 @@ const image = @import("image.zig");
 
 pub const block_bytes = 8;
 pub const Quality = stb_dxt.Quality;
+pub const Rounding = stb_dxt.Rounding;
+pub const Settings = stb_dxt.Settings;
 
 /// Encodes 16 RGBA pixels (row-major); alpha is ignored and the block always
 /// decodes opaque.
-pub fn encodeBlock(pixels: *const [16][4]u8, quality: Quality) [block_bytes]u8 {
-    return stb_dxt.encodeColorBlock(pixels, quality);
+pub fn encodeBlock(pixels: *const [16][4]u8, settings: Settings) [block_bytes]u8 {
+    return stb_dxt.encodeColorBlock(pixels, settings);
 }
 
 /// Decodes to RGBA. A block whose first endpoint is not greater than the
@@ -67,11 +69,11 @@ fn unpack565(c: u16) [3]u8 {
 
 /// Encodes an image of at least 3 channels (RGB or RGBA) into `dst`, which
 /// must hold `image.encodedLen(block_bytes, width, height)` bytes.
-pub fn encodeImage(src: image.Image(u8), dst: []u8, quality: Quality) void {
+pub fn encodeImage(src: image.Image(u8), dst: []u8, settings: Settings) void {
     src.check();
     assert(src.channels >= 3);
-    const Ctx = struct { src: image.Image(u8), quality: Quality };
-    image.encodeBlocks(block_bytes, src.width, src.height, dst, Ctx{ .src = src, .quality = quality }, struct {
+    const Ctx = struct { src: image.Image(u8), settings: Settings };
+    image.encodeBlocks(block_bytes, src.width, src.height, dst, Ctx{ .src = src, .settings = settings }, struct {
         fn f(ctx: Ctx, bx: u32, by: u32) [block_bytes]u8 {
             var px: [16][4]u8 = undefined;
             if (ctx.src.channels == 3) {
@@ -79,7 +81,7 @@ pub fn encodeImage(src: image.Image(u8), dst: []u8, quality: Quality) void {
             } else {
                 px = ctx.src.block(4, bx, by);
             }
-            return encodeBlock(&px, ctx.quality);
+            return encodeBlock(&px, ctx.settings);
         }
     }.f);
 }
@@ -97,7 +99,7 @@ pub fn decodeImage(src: []const u8, dst: image.ImageMut(u8)) void {
 
 test "a solid block round-trips within 565 precision" {
     const px: [16][4]u8 = @splat(.{ 200, 100, 50, 255 });
-    const decoded = decodeBlock(&encodeBlock(&px, .normal));
+    const decoded = decodeBlock(&encodeBlock(&px, .{}));
     for (decoded) |p| {
         try std.testing.expect(@abs(@as(i32, p[0]) - 200) <= 4);
         try std.testing.expect(@abs(@as(i32, p[1]) - 100) <= 2);

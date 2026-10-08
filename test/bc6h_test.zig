@@ -9,11 +9,13 @@ const common = @import("common.zig");
 
 const TcOptions = extern struct { signed_float: c_int, reserved: c_int };
 
-extern fn tc_bc6h_compress_rgb32f(rgb: [*]const f32, width: u32, height: u32, stride_bytes: usize, opt: *const TcOptions, out: [*]u8, out_size: usize) c_int;
+extern fn tc_bc6h_compress_rgb32f(rgb: [*]const f32, width: u32, height: u32, stride_bytes: usize, opt: ?*const TcOptions, out: [*]u8, out_size: usize) c_int;
 extern fn tc_bc6h_decompress_rgb16f(bc6h: [*]const u8, width: u32, height: u32, is_signed: c_int, stride_bytes: usize, out_rgb: [*]u16, out_size: usize) c_int;
 extern fn tc_bc6h_decode_block_half(blk: *const [16]u8, is_signed: c_int, out: *[16][3]u16) void;
 extern fn tc_backend_force_mask(mask: u32) void;
 extern fn tc_backend_name() [*:0]const u8;
+extern fn tc_bc6h_options_init(opt: ?*TcOptions) void;
+extern fn tc_bc6h_decompress_rgbaf(bc6h: [*]const u8, width: u32, height: u32, is_signed: c_int, stride_bytes: usize, out_rgba: [*]f32, out_size: usize) c_int;
 
 const formats = [_]bcn.bc6h.Format{ .unsigned, .signed };
 const encoded_len = bcn.encodedLen(16, images.width, images.height);
@@ -23,9 +25,14 @@ fn view(img: *const images.Hdr) bcn.Image(f32) {
     return bcn.Image(f32).init(floats, images.width, images.height, 3);
 }
 
-fn referenceEncode(img: *const images.Hdr, format: bcn.bc6h.Format, out: *[encoded_len]u8) !void {
-    const opt: TcOptions = .{ .signed_float = @intFromBool(format == .signed), .reserved = 0 };
-    const rc = tc_bc6h_compress_rgb32f(@ptrCast(&img.pixels), images.width, images.height, images.width * 3 * @sizeOf(f32), &opt, out, out.len);
+fn referenceEncode(img: *const images.Hdr, index: usize, format: bcn.bc6h.Format, out: *[encoded_len]u8) !void {
+    var opt: TcOptions = undefined;
+    tc_bc6h_options_init(&opt);
+    tc_bc6h_options_init(null); // a no-op, for coverage of the original
+    opt.signed_float = @intFromBool(format == .signed);
+    // texcomp treats no options as unsigned; pass none for half the images.
+    const opt_ptr: ?*const TcOptions = if (format == .unsigned and index % 2 == 0) null else &opt;
+    const rc = tc_bc6h_compress_rgb32f(@ptrCast(&img.pixels), images.width, images.height, images.width * 3 * @sizeOf(f32), opt_ptr, out, out.len);
     try std.testing.expectEqual(@as(c_int, 0), rc);
 }
 
@@ -59,6 +66,7 @@ test "bc6h encodes like texcomp under SIMD and scalar dispatch" {
     const dispatches = [_]struct { mask: u32, label: []const u8 }{
         .{ .mask = 0xffffffff, .label = "default" },
         .{ .mask = 0, .label = "scalar" },
+        .{ .mask = 1 | 2, .label = "sse4.1" }, // SSE2 and SSE4.1, not AVX2
     };
     var mode_counts: [2][15]u32 = @splat(@splat(0));
     for (dispatches) |d| {
@@ -66,7 +74,7 @@ test "bc6h encodes like texcomp under SIMD and scalar dispatch" {
         for (0..images.hdr_names.len) |index| {
             const img = images.hdr(index);
             for (formats, 0..) |format, fi| {
-                try referenceEncode(&img, format, &want);
+                try referenceEncode(&img, index, format, &want);
                 bcn.bc6h.encodeImage(view(&img), &got, format);
                 var m: common.Mismatches = .{ .label = img.name };
                 const what = if (format == .signed) "sf16" else "uf16";
@@ -98,6 +106,16 @@ test "bc6h decodes like texcomp" {
             try std.testing.expectEqual(@as(c_int, 0), tc_bc6h_decompress_rgb16f(&encoded, images.width, images.height, is_signed, images.width * 3 * 2, @ptrCast(&want), @sizeOf(@TypeOf(want))));
             bcn.bc6h.decodeImage(&encoded, bcn.ImageMut(u16).init(@as([*]u16, @ptrCast(&got))[0 .. images.pixel_count * 3], images.width, images.height, 3), format);
             m.check(img.name, 0, @intCast(index), format, std.mem.asBytes(&want), std.mem.asBytes(&got));
+
+            // The float decoders, RGBA with alpha 1 and RGB.
+            var want_f: [images.pixel_count][4]f32 = undefined;
+            var got_f: [images.pixel_count][4]f32 = undefined;
+            try std.testing.expectEqual(@as(c_int, 0), tc_bc6h_decompress_rgbaf(&encoded, images.width, images.height, is_signed, images.width * 16, @ptrCast(&want_f), @sizeOf(@TypeOf(want_f))));
+            bcn.bc6h.decodeImageF32(&encoded, bcn.ImageMut(f32).init(@as([*]f32, @ptrCast(&got_f))[0 .. images.pixel_count * 4], images.width, images.height, 4), format);
+            m.check(img.name, 1, @intCast(index), format, std.mem.asBytes(&want_f), std.mem.asBytes(&got_f));
+            var got_rgb: [images.pixel_count][3]f32 = undefined;
+            bcn.bc6h.decodeImageF32(&encoded, bcn.ImageMut(f32).init(@as([*]f32, @ptrCast(&got_rgb))[0 .. images.pixel_count * 3], images.width, images.height, 3), format);
+            for (want_f, got_rgb) |w, g| try std.testing.expectEqual(@as([3]u32, @bitCast(w[0..3].*)), @as([3]u32, @bitCast(g)));
         }
     }
     // Random blocks reach every mode, reserved ones included.
@@ -125,7 +143,6 @@ test "bc6h round-trips the HDR set within the format error" {
             bcn.bc6h.decodeImage(&encoded, bcn.ImageMut(u16).init(@as([*]u16, @ptrCast(&decoded))[0 .. images.pixel_count * 3], images.width, images.height, 3), format);
             const err = logRmse(&img, &decoded, format);
             const bound = if (fi == 0) uf16_rmse_max[index] else sf16_rmse_max[index];
-            std.debug.print("BC6H RMSE {s} {t} {d:.4}\n", .{ img.name, format, err });
             if (err > bound) {
                 std.debug.print("{s} {t}: log rmse {d:.4} over {d:.4}\n", .{ img.name, format, err, bound });
                 return error.RoundTrip;
@@ -136,9 +153,10 @@ test "bc6h round-trips the HDR set within the format error" {
 
 // Bounds per HDR image (in hdr_names order) on the RMSE of
 // sign(x) * log2(1 + |x|), measured on the first port with about 10 percent
-// headroom.
-const uf16_rmse_max = [_]f64{ 1, 1, 1, 1, 1, 1, 1, 1 };
-const sf16_rmse_max = [_]f64{ 1, 1, 1, 1, 1, 1, 1, 1 };
+// headroom. The noise, signed and specials images are far above the rest:
+// random values spanning many stops per block are beyond any BC6H mode.
+const uf16_rmse_max = [_]f64{ 0.0084, 0.07, 3.2, 0.0075, 2.25, 4.37, 0.001, 0.0148 };
+const sf16_rmse_max = [_]f64{ 0.014, 0.071, 3.24, 0.0069, 3.85, 7.41, 0.001, 0.0212 };
 
 /// What the format can store for `x`: unsigned clamps negatives (and NaN)
 /// to zero, both clamp magnitudes to the largest half.

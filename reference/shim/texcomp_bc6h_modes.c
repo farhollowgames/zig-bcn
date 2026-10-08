@@ -1,11 +1,6 @@
-// Test-only: a second copy of texcomp's BC6H encoder that exposes each mode
-// encoder, so the tests compare every mode's output and error estimate with
-// the port's, not only the mode that wins. The public names are renamed so
-// this copy links beside the original.
-#define tc_bc6h_options_init ref_modes_tc_bc6h_options_init
-#define tc_bc6h_compressed_size ref_modes_tc_bc6h_compressed_size
-#define tc_float_to_half_bits ref_modes_tc_float_to_half_bits
-#define tc_bc6h_compress_rgb32f ref_modes_tc_bc6h_compress_rgb32f
+// Test-only: texcomp's BC6H encoder, compiled in place of its own file, with
+// each mode encoder exported so the tests compare every mode's output and
+// error estimate with the port's, not only the mode that wins.
 #include "../texcomp/src/texcomp_bc6h.c"
 
 // Runs mode `mode` (0 to 13) of the unsigned (is_signed == 0) or signed

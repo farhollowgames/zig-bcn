@@ -1,0 +1,27 @@
+# Coverage the differential tests must reach in the original sources, checked
+# by `zig build coverage`. One rule per line:
+#
+#   <file under reference/> <function as llvm-cov names it> [<missed lines> <missed branches> | skip]
+#
+# A function with no counts must be fully covered: no missed line and no
+# missed branch. Counts declare lines or branches that cannot be reached, and
+# must match exactly so any change is noticed; doc/coverage.md says why for
+# each. `skip` marks code the port does not translate. A function of `*`
+# applies to every function of the file that has no rule of its own.
+
+# stb_dxt: every function.
+stb/stb_dxt.h *
+
+# texcomp's decoders, the oracle for the Zig decoders. The image decoders
+# keep argument checks the port asserts instead, and BC5 has a SNORM path
+# the port does not offer (doc/coverage.md).
+texcomp/src/texcomp_bc1.c tc_decode_bc1_color_block
+texcomp/src/texcomp_bc1.c texcomp_bc1.c:tc_rgb565_unpack
+texcomp/src/texcomp_bc1.c tc_bc1_decompress_rgba8 1 6
+texcomp/src/texcomp_bc3.c tc_bc3_decompress_rgba8 1 6
+texcomp/src/texcomp_bc5.c tc_decode_bc4_block
+texcomp/src/texcomp_bc5.c tc_bc5_decompress_rgba8 9 9
+
+# BC6H: texcomp encoder and decoder.
+texcomp/src/texcomp_bc6h.c *
+texcomp/src/texcomp_bc6h_decode.c *

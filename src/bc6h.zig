@@ -53,10 +53,67 @@ pub fn decodeImage(src: []const u8, dst: image.ImageMut(u16), format: Format) vo
     }.f);
 }
 
-/// The value of half-float bits, exactly.
+/// Decodes into float RGB or RGBA (`dst.channels` 3 or 4; BC6H has no
+/// alpha, so a fourth channel is 1).
+pub fn decodeImageF32(src: []const u8, dst: image.ImageMut(f32), format: Format) void {
+    dst.check();
+    assert(dst.channels == 3 or dst.channels == 4);
+    const Ctx = struct { dst: image.ImageMut(f32), format: Format };
+    image.decodeBlocks(block_bytes, dst.width, dst.height, src, Ctx{ .dst = dst, .format = format }, struct {
+        fn f(ctx: Ctx, block: *const [block_bytes]u8, bx: u32, by: u32) void {
+            const halves = decodeBlock(block, ctx.format);
+            var px: [16][4]f32 = undefined;
+            for (halves, &px) |h, *p| p.* = .{ halfToF32(h[0]), halfToF32(h[1]), halfToF32(h[2]), 1.0 };
+            if (ctx.dst.channels == 4) {
+                ctx.dst.putBlock(4, bx, by, &px);
+            } else {
+                var rgb: [16][3]f32 = undefined;
+                for (px, &rgb) |p, *q| q.* = p[0..3].*;
+                ctx.dst.putBlock(3, bx, by, &rgb);
+            }
+        }
+    }.f);
+}
+
+/// The value of half-float bits, exactly, keeping NaN payloads as they are
+/// (a hardware conversion may quiet them).
 pub fn halfToF32(bits: u16) f32 {
-    const h: f16 = @bitCast(bits);
-    return h;
+    const sign: u32 = @as(u32, bits & 0x8000) << 16;
+    const exp: u32 = (bits >> 10) & 0x1f;
+    var man: u32 = bits & 0x3ff;
+    var out: u32 = undefined;
+    if (exp == 0) {
+        if (man == 0) {
+            out = sign;
+        } else {
+            // A subnormal half is a normal float: shift the leading one up
+            // to the implicit bit.
+            var e: u32 = 127 - 15 + 1;
+            while (man & 0x400 == 0) {
+                man <<= 1;
+                e -= 1;
+            }
+            out = sign | (e << 23) | ((man & 0x3ff) << 13);
+        }
+    } else if (exp == 31) {
+        out = sign | 0x7f800000 | (man << 13);
+    } else {
+        out = sign | ((exp + 127 - 15) << 23) | (man << 13);
+    }
+    return @bitCast(out);
+}
+
+test "half to float is exact" {
+    for (0..0x10000) |i| {
+        const h: u16 = @intCast(i);
+        const want: f32 = @as(f16, @bitCast(h));
+        const got = halfToF32(h);
+        if (std.math.isNan(want)) {
+            try std.testing.expect(std.math.isNan(got));
+        } else {
+            try std.testing.expectEqual(@as(u32, @bitCast(want)), @as(u32, @bitCast(got)));
+        }
+    }
 }
 
 // --- Decoding -------------------------------------------------------------------
