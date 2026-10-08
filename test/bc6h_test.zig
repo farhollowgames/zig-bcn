@@ -275,3 +275,120 @@ test "bc6h every mode encoder matches texcomp on fuzz blocks" {
     std.debug.print("\nfuzz encodable (uf16): {any}\nfuzz encodable (sf16): {any}\nfuzz wins (uf16): {any}\nfuzz wins (sf16): {any}\n", .{ tried[0], tried[1], wins[0], wins[1] });
     try m.finish();
 }
+
+extern fn tc_float_to_half_bits(f: f32) u16;
+extern fn tc_bc6h_compressed_size(width: u32, height: u32) usize;
+
+test "bc6h float to half matches texcomp on all 2^32 floats" {
+    const slices = 64;
+    const Worker = struct {
+        fn run(slice: u32, mismatches: *std.atomic.Value(u32)) void {
+            const span: u64 = (1 << 32) / slices;
+            var bits: u64 = slice * span;
+            while (bits < (slice + 1) * span) : (bits += 1) {
+                const f: f32 = @bitCast(@as(u32, @intCast(bits)));
+                if (tc_float_to_half_bits(f) != bcn.bc6h.floatToHalfBits(f)) {
+                    if (mismatches.fetchAdd(1, .monotonic) < common.max_reported)
+                        std.debug.print("float to half differs at 0x{x:0>8}\n", .{bits});
+                }
+            }
+        }
+    };
+    var mismatches: std.atomic.Value(u32) = .init(0);
+    var threads: [slices]std.Thread = undefined;
+    for (&threads, 0..) |*t, i| t.* = try std.Thread.spawn(.{}, Worker.run, .{ @as(u32, @intCast(i)), &mismatches });
+    for (threads) |t| t.join();
+    try std.testing.expectEqual(@as(u32, 0), mismatches.load(.monotonic));
+}
+
+test "bc6h compressed size matches texcomp" {
+    for (1..70) |w| for (1..70) |h| {
+        try std.testing.expectEqual(tc_bc6h_compressed_size(@intCast(w), @intCast(h)), bcn.encodedLen(16, @intCast(w), @intCast(h)));
+    };
+    // texcomp answers 0 for an empty image; zig-bcn asserts sizes are positive.
+    try std.testing.expectEqual(@as(usize, 0), tc_bc6h_compressed_size(0, 5));
+}
+
+test "bc6h encodes and decodes padded rows like texcomp" {
+    // A 13x9 window of the gradient image, read with its full row stride,
+    // and decoded into rows padded by 5 texels.
+    const img = images.hdr(1);
+    const w = 13;
+    const h = 9;
+    const floats: []const f32 = @as([*]const f32, @ptrCast(&img.pixels))[0 .. images.pixel_count * 3];
+    const src: bcn.Image(f32) = .{ .pixels = floats, .width = w, .height = h, .stride = images.width * 3, .channels = 3 };
+    for (formats) |format| {
+        var want: [bcn.encodedLen(16, w, h)]u8 = undefined;
+        var got: [want.len]u8 = undefined;
+        var opt: TcOptions = .{ .signed_float = @intFromBool(format == .signed), .reserved = 0 };
+        try std.testing.expectEqual(@as(c_int, 0), tc_bc6h_compress_rgb32f(floats.ptr, w, h, images.width * 3 * 4, &opt, &want, want.len));
+        bcn.bc6h.encodeImage(src, &got, format);
+        try std.testing.expectEqualSlices(u8, &want, &got);
+
+        const row = (w + 5) * 3;
+        var want_h: [row * h]u16 = @splat(0);
+        var got_h: [row * h]u16 = @splat(0);
+        try std.testing.expectEqual(@as(c_int, 0), tc_bc6h_decompress_rgb16f(&want, w, h, opt.signed_float, row * 2, &want_h, want_h.len * 2));
+        bcn.bc6h.decodeImage(&got, .{ .pixels = &got_h, .width = w, .height = h, .stride = row, .channels = 3 }, format);
+        try std.testing.expectEqualSlices(u16, &want_h, &got_h);
+
+        const row_f = (w + 5) * 4;
+        var want_f: [row_f * h]f32 = @splat(0);
+        var got_f: [row_f * h]f32 = @splat(0);
+        try std.testing.expectEqual(@as(c_int, 0), tc_bc6h_decompress_rgbaf(&want, w, h, opt.signed_float, row_f * 4, &want_f, want_f.len * 4));
+        bcn.bc6h.decodeImageF32(&got, .{ .pixels = &got_f, .width = w, .height = h, .stride = row_f, .channels = 4 }, format);
+        try std.testing.expectEqualSlices(u8, std.mem.sliceAsBytes(&want_f), std.mem.sliceAsBytes(&got_f));
+    }
+}
+
+/// Blocks found by coverage-guided fuzzing (libFuzzer) of texcomp's BC6H
+/// encoder, minimized to those that each reach a new edge. Each record is a
+/// kind byte, then 48 half-float bit patterns (kind 0) or 48 f32 bit patterns
+/// (kind 1), RGB row-major, little-endian.
+const corpus = @embedFile("bc6h_corpus.bin");
+
+fn corpusBlock(at: *usize) ?[16][3]f32 {
+    if (at.* >= corpus.len) return null;
+    var px: [16][3]f32 = undefined;
+    const kind = corpus[at.*];
+    at.* += 1;
+    for (0..48) |i| {
+        px[i / 3][i % 3] = switch (kind) {
+            0 => bcn.bc6h.halfToF32(std.mem.readInt(u16, corpus[at.* + 2 * i ..][0..2], .little)),
+            1 => @bitCast(std.mem.readInt(u32, corpus[at.* + 4 * i ..][0..4], .little)),
+            else => unreachable,
+        };
+    }
+    at.* += if (kind == 0) 96 else 192;
+    return px;
+}
+
+test "bc6h every mode encoder matches texcomp on the fuzzing corpus" {
+    defer tc_backend_force_mask(0xffffffff);
+    var m: common.Mismatches = .{ .label = "bc6h corpus" };
+    for ([_]u32{ 0xffffffff, 0, 1 | 2 }) |mask| {
+        tc_backend_force_mask(mask);
+        var at: usize = 0;
+        var n: u32 = 0;
+        while (corpusBlock(&at)) |px| : (n += 1) {
+            for (formats) |format| {
+                const signed = format == .signed;
+                var want: [16]u8 = undefined;
+                ref_bc6h_block(@intFromBool(signed), &px, &want);
+                m.check(if (signed) "sf16 block" else "uf16 block", 0, n, px, &want, &bcn.bc6h.encodeBlock(&px, format));
+                for (0..14) |mode_usize| {
+                    const mode: u4 = @intCast(mode_usize);
+                    var got: [16]u8 = undefined;
+                    var want_err: u64 = undefined;
+                    const have = ref_bc6h_mode(@intFromBool(signed), mode, &px, &want, &want_err) != 0;
+                    const got_err = bcn.bc6h.texcomp.encodeMode(signed, mode, &px, &got);
+                    if (have != (got_err != null)) return error.ModeSetDiffers;
+                    const ge = got_err orelse continue;
+                    m.check("mode error", mode, n, px, std.mem.asBytes(&want_err), std.mem.asBytes(&ge));
+                    if (want_err != bcn.bc6h.texcomp.err_unencodable) m.check("mode block", mode, n, px, &want, &got);
+                }
+            }
+        }
+    }
+    try m.finish();
+}

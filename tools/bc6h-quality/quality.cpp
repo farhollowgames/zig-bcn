@@ -192,10 +192,20 @@ int main(int argc, char **argv) {
             auto t0 = std::chrono::steady_clock::now();
             tc_bc6h_compress_rgb32f(img.rgb.data(), img.width, img.height, size_t(img.width) * 12, &opt, tc.data(), tc.size());
             double t_tc = seconds_since(t0);
+            // The same encoder with its selector search forced to scalar code,
+            // the path zig-bcn translates; the bytes are identical.
+            std::vector<uint8_t> tc_scalar(tc.size());
+            tc_backend_force_mask(TC_BACKEND_SCALAR);
+            t0 = std::chrono::steady_clock::now();
+            tc_bc6h_compress_rgb32f(img.rgb.data(), img.width, img.height, size_t(img.width) * 12, &opt, tc_scalar.data(), tc_scalar.size());
+            double t_tc_scalar = seconds_since(t0);
+            tc_backend_force_mask(TC_BACKEND_ALL);
+            if (tc_scalar != tc) std::printf("| %s | scalar and SIMD texcomp differ |\n", img.name.c_str());
             t0 = std::chrono::steady_clock::now();
             encode_dxtex(img, is_signed, dx);
             double t_dx = seconds_since(t0);
             report(img, is_signed, "texcomp", tc, t_tc);
+            report(img, is_signed, "texcomp scalar", tc_scalar, t_tc_scalar);
             report(img, is_signed, "DirectXTex", dx, t_dx);
         }
     }

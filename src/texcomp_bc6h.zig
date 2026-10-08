@@ -39,7 +39,9 @@ const err_try_more: u64 = 48 * 256 * 256;
 const err_none: u64 = maxInt(u64);
 
 /// IEEE binary32 to binary16 bits, rounding half up in magnitude; NaN keeps a
-/// quiet payload bit, and overflow becomes infinity.
+/// quiet payload bit, and overflow becomes infinity. The subnormal branch
+/// shifts the mantissa twice, so it yields zero for every input: halves below
+/// 2^-14 flush to signed zero, as in the C.
 pub fn floatToHalfBits(fv: f32) u16 {
     const u: u32 = @bitCast(fv);
     const sign: u32 = (u >> 16) & 0x8000;
@@ -1328,7 +1330,8 @@ test "float to half matches known values" {
     try std.testing.expectEqual(@as(u16, 0x7bff), floatToHalfBits(65504.0));
     try std.testing.expectEqual(@as(u16, 0x7c00), floatToHalfBits(65520.0));
     try std.testing.expectEqual(@as(u16, 0x0400), floatToHalfBits(6.1035156e-5));
-    // The subnormal path drops 2^-24, the smallest half, to zero.
+    // The subnormal path flushes everything below 2^-14 to signed zero.
     try std.testing.expectEqual(@as(u16, 0x0000), floatToHalfBits(5.9604645e-8));
+    try std.testing.expectEqual(@as(u16, 0x8000), floatToHalfBits(-6.1e-5));
     try std.testing.expectEqual(@as(u16, 0x7e00), floatToHalfBits(std.math.nan(f32)));
 }

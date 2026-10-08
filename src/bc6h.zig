@@ -19,6 +19,11 @@ pub const Format = enum {
     signed,
 };
 
+/// IEEE binary32 to binary16 bits as the encoder rounds them: half up in
+/// magnitude, NaN kept quiet, overflow to infinity, and every value below
+/// 2^-14 (the half subnormal range) flushed to signed zero.
+pub const floatToHalfBits = texcomp_bc6h.floatToHalfBits;
+
 /// Encodes 16 RGB texels (row-major). Values beyond the largest half
 /// (65504) clamp to it.
 pub fn encodeBlock(pixels: *const [16][3]f32, format: Format) [block_bytes]u8 {
