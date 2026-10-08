@@ -71,10 +71,15 @@ pub fn encodeBlockQuality(pixels: *const [16][3]f32, format: Format, quality: Qu
 
 /// `encodeImage` at the chosen quality.
 pub fn encodeImageQuality(src: image.Image(f32), dst: []u8, format: Format, quality: Quality) void {
+    encodeImageQualityRows(src, dst, format, quality, image.BlockRows.all(src.height));
+}
+
+/// `encodeImageQuality` for the block rows `rows` only; see `image.BlockRows`.
+pub fn encodeImageQualityRows(src: image.Image(f32), dst: []u8, format: Format, quality: Quality, rows: image.BlockRows) void {
     src.check();
     assert(src.channels >= 3);
     const Ctx = struct { src: image.Image(f32), format: Format, quality: Quality };
-    image.encodeBlocks(block_bytes, src.width, src.height, dst, Ctx{ .src = src, .format = format, .quality = quality }, struct {
+    image.encodeBlocks(block_bytes, src.width, src.height, dst, rows, Ctx{ .src = src, .format = format, .quality = quality }, struct {
         fn f(ctx: Ctx, bx: u32, by: u32) [block_bytes]u8 {
             return encodeBlockQuality(&ctx.src.block(3, bx, by), ctx.format, ctx.quality);
         }

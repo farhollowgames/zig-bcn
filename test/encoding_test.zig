@@ -19,6 +19,8 @@ const ldr_encodings = [_]bcn.Encoding{
 const hdr_encodings = [_]bcn.Encoding{
     .{ .bc6h = .{ .format = .unsigned } },
     .{ .bc6h = .{ .format = .signed } },
+    .{ .bc6h = .{ .format = .unsigned, .quality = .high } },
+    .{ .bc6h = .{ .format = .signed, .quality = .high } },
 };
 
 const max_len = bcn.encodedLen(16, images.width, images.height);
@@ -30,7 +32,10 @@ fn direct(encoding: *const bcn.Encoding, src: bcn.Source, dst: []u8) void {
         .bc3 => |s| bcn.bc3.encodeImage(src.unorm8, dst, s),
         .bc4 => bcn.bc4.encodeImage(src.unorm8, dst),
         .bc5 => bcn.bc5.encodeImage(src.unorm8, dst),
-        .bc6h => |o| bcn.bc6h.encodeImage(src.float32, dst, o.format),
+        .bc6h => |o| switch (o.quality) {
+            .fast => bcn.bc6h.encodeImage(src.float32, dst, o.format),
+            .high => bcn.bc6h.encodeImageQuality(src.float32, dst, o.format, .high),
+        },
         .bc7 => |*p| bcn.bc7.encodeImage(src.unorm8, dst, p),
     }
 }

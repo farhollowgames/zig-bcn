@@ -105,7 +105,8 @@ Format specifics:
   `.signed`. `encodeBlock` and `encodeImage` are texcomp's encoder;
   `encodeBlockQuality` and `encodeImageQuality` take `Quality.fast` (the
   same) or `.high`, zig-bcn's own encoder, for shipped assets (see Quality
-  and speed). `decodeImage` writes half-float bits (`u16`),
+  and speed); through `bcn.Encoding`, `.{ .bc6h = .{ .quality = .high } }`.
+  `decodeImage` writes half-float bits (`u16`),
   `decodeImageF32` floats; `floatToHalfBits` and `halfToF32` convert.
 
 ## How the tests prove equivalence

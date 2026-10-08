@@ -14,6 +14,9 @@ const bc7 = @import("bc7.zig");
 
 pub const Bc6h = struct {
     format: bc6h.Format = .unsigned,
+    /// `.fast` is texcomp's encoder byte for byte; `.high` is zig-bcn's own
+    /// search, for skies, environment maps and other smooth HDR.
+    quality: bc6h.Quality = .fast,
 };
 
 /// A format with its encoder settings.
@@ -130,7 +133,7 @@ pub fn encodeImageRows(encoding: *const Encoding, src: Source, dst: []u8, rows: 
         .bc3 => |settings| bc3.encodeImageRows(src.unorm8, dst, settings, rows),
         .bc4 => bc4.encodeImageRows(src.unorm8, dst, rows),
         .bc5 => bc5.encodeImageRows(src.unorm8, dst, rows),
-        .bc6h => |o| bc6h.encodeImageRows(src.float32, dst, o.format, rows),
+        .bc6h => |o| bc6h.encodeImageQualityRows(src.float32, dst, o.format, o.quality, rows),
         .bc7 => |*params| bc7.encodeImageRows(src.unorm8, dst, params, rows),
     }
 }
