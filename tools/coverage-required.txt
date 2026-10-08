@@ -21,3 +21,12 @@ texcomp/src/texcomp_bc1.c tc_bc1_decompress_rgba8 1 6
 texcomp/src/texcomp_bc3.c tc_bc3_decompress_rgba8 1 6
 texcomp/src/texcomp_bc5.c tc_decode_bc4_block
 texcomp/src/texcomp_bc5.c tc_bc5_decompress_rgba8 9 9
+
+# bc7e scalar: every function.
+bc7e/basisu_bc7e_scalar.cpp *
+
+# texcomp's BC7 decoder, the oracle for the Zig decoder.
+texcomp/src/texcomp_bc7.c tc_bc7_decompress_rgba8
+texcomp/src/texcomp_bc7.c texcomp_bc7.c:tc_bc7_decode_block
+texcomp/src/texcomp_bc7.c texcomp_bc7.c:tc_bc7_dec_rb
+texcomp/src/texcomp_bc7.c texcomp_bc7.c:tc_bc7_dec_interp
