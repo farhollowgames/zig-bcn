@@ -142,6 +142,12 @@ fn addCoverage(
             const cc = b.addSystemCommand(&.{ compiler, "-c" });
             cc.addArgs(&flags);
             cc.addArgs(&instrument);
+            // bc7e calls sqrt and floor unqualified on floats, meaning the
+            // float overloads, which libc++ (the zig c++ reference) and MSVC
+            // declare globally. The system clang++ uses libstdc++, whose
+            // <cmath> does not, so sqrt would run in double and round
+            // differently; its <math.h> brings the overloads in.
+            if (std.mem.eql(u8, compiler, "clang++")) cc.addArgs(&.{ "-include", "math.h" });
             for (reference_include_dirs) |dir| cc.addPrefixedDirectoryArg("-I", b.path(dir));
             cc.addFileArg(b.path(b.pathJoin(&.{ "reference", file })));
             cc.addArg("-o");

@@ -13,6 +13,7 @@ pub const bc1 = @import("bc1.zig");
 pub const bc3 = @import("bc3.zig");
 pub const bc4 = @import("bc4.zig");
 pub const bc5 = @import("bc5.zig");
+pub const bc7 = @import("bc7.zig");
 pub const bc6h = @import("bc6h.zig");
 
 test {
