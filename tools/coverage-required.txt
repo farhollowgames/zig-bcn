@@ -74,3 +74,44 @@ texcomp/src/texcomp_bc7.c tc_bc7_decompress_rgba8 1 6
 texcomp/src/texcomp_bc7.c texcomp_bc7.c:tc_bc7_decode_block
 texcomp/src/texcomp_bc7.c texcomp_bc7.c:tc_bc7_dec_rb 0 1
 texcomp/src/texcomp_bc7.c texcomp_bc7.c:tc_bc7_dec_interp
+
+# BC6H: texcomp's encoder (built through shim/texcomp_bc6h_modes.c, hence the
+# prefix of its static functions) and decoder, every function, except as
+# declared below (doc/coverage.md, BC6H).
+texcomp/src/texcomp_bc6h.c *
+texcomp/src/texcomp_bc6h_decode.c *
+# Argument errors, asserted by the port.
+texcomp/src/texcomp_bc6h.c tc_bc6h_compress_rgb32f 1 7
+texcomp/src/texcomp_bc6h_decode.c tc_bc6h_decompress_rgb16f 1 6
+texcomp/src/texcomp_bc6h_decode.c tc_bc6h_decompress_rgbaf 1 6
+# Clamps the arithmetic or the callers rule out.
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_bc6h_quant_sf16 0 1
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_bc6h_quant_sf16_n 0 1
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_bc6h_pack_signed10 0 2
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_bc6h_pack_signed_n 0 2
+# The mode encoders: partitions always have both regions, delta checks the
+# order of comparison decides, refinement clamps and fit failures no input
+# reaches, dead code after break, and two coverage-mapping artefacts.
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_bc6h_mode0_uf16 0 6
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_bc6h_mode1_uf16 0 4
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_bc6h_mode234_uf16 24 32
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_bc6h_mode5_uf16 0 11
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_bc6h_mode678_uf16 3 7
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_bc6h_mode9_uf16 0 3
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_bc6h_mode12_uf16 1 0
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_bc6h_mode13_uf16 1 0
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_bc6h_mode0_sf16 0 4
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_bc6h_mode1_sf16 0 4
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_bc6h_mode234_sf16 0 10
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_bc6h_mode5_sf16 0 4
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_bc6h_mode678_sf16 1 5
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_bc6h_mode9_sf16 0 3
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_bc6h_mode12_sf16 1 0
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_bc6h_mode13_sf16 1 0
+# The block encoders: modes that never improve on the chain where they are tried.
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_encode_bc6h_block_uf16 0 11
+texcomp/src/texcomp_bc6h.c texcomp_bc6h_modes.c:tc_encode_bc6h_block_sf16 0 1
+# The decoder's bit reader for 32-bit reads (fields are at most 16 bits), and
+# its float conversion of infinity and NaN, which decoded halves never are.
+texcomp/src/texcomp_bc6h_decode.c texcomp_bc6h_decode.c:tc_bc6h_rd 0 1
+texcomp/src/texcomp_bc6h_decode.c texcomp_bc6h_decode.c:tc_bc6h_h2f 1 1

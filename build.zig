@@ -62,7 +62,8 @@ const reference_c_files = [_][]const u8{
     "texcomp/src/texcomp_bc1.c",
     "texcomp/src/texcomp_bc3.c",
     "texcomp/src/texcomp_bc5.c",
-    "texcomp/src/texcomp_bc6h.c",
+    // Includes texcomp/src/texcomp_bc6h.c unchanged and exports its modes.
+    "shim/texcomp_bc6h_modes.c",
     "texcomp/src/texcomp_bc6h_decode.c",
     "texcomp/src/texcomp_bc7.c",
 };
@@ -72,7 +73,10 @@ const reference_cpp_files = [_][]const u8{
     "bc7e/basisu_bc7e_scalar.cpp",
 };
 
-const c_flags = [_][]const u8{ "-std=c11", "-ffp-contract=off", "-fno-fast-math" };
+// texcomp's BC6H error sums overflow int32, which is undefined behaviour;
+// -fwrapv makes them wrap, the result every compiler and the port agree on,
+// where optimizers that exploit the overflow change which blocks win.
+const c_flags = [_][]const u8{ "-std=c11", "-ffp-contract=off", "-fno-fast-math", "-fwrapv" };
 const cpp_flags = [_][]const u8{ "-std=c++17", "-ffp-contract=off", "-fno-fast-math", "-fno-exceptions", "-fno-rtti", "-fno-threadsafe-statics" };
 
 /// The original sources the coverage report covers: everything the ports

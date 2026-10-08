@@ -85,6 +85,34 @@ where `1.0f / sqrt(x)` then rounds differently and blocks change. The port
 follows the float overloads, which the source comment names as intended
 (see `doc/coverage.md`).
 
-## texcomp BC6H
+## texcomp BC6H (TinyEXR `tools/texcomp`, commit 644148d)
 
-In progress on the `bc6h` branch.
+The BC6H encoder of `texcomp_bc6h.c` and the decoder of
+`texcomp_bc6h_decode.c`. The reference builds texcomp with `-fwrapv`: its
+selector error sums overflow `int32` (undefined behaviour in C), and
+optimizers that exploit it change which blocks win, so without it the
+original's own output depends on the compiler (doc/coverage.md, BC6H).
+
+| original | zig-bcn | test (`test/bc6h_test.zig`) |
+| --- | --- | --- |
+| `tc_bc6h_compress_rgb32f(rgb, w, h, stride_bytes, opt, out, size)` | `bc6h.encodeImage(src, dst, format)` | differential: 8 HDR images, both formats, under texcomp's AVX2, SSE4.1 and scalar selector kernels; a 13×9 window read with a wider stride |
+| `tc_bc6h_options.signed_float` | `Format`: `.unsigned` (BC6H_UF16), `.signed` (BC6H_SF16) | differential, both values, and `opt = NULL` (unsigned) |
+| `tc_bc6h_options.reserved` | none: texcomp never reads it | |
+| `tc_bc6h_options_init` | none needed: `Format` is a plain argument | the reference calls it, with an options struct and with `NULL` |
+| `tc_bc6h_compressed_size` | `encodedLen(16, w, h)` | differential for every size from 1×1 to 69×69. texcomp returns 0 for a zero width or height; zig-bcn asserts sizes are positive |
+| `tc_float_to_half_bits` (public in texcomp) | `bc6h.floatToHalfBits` | differential on all 2^32 float bit patterns |
+| the block encoders `tc_encode_bc6h_block_uf16`, `_sf16` (internal) | `bc6h.encodeBlock(pixels, format)` | differential: 20,000 fuzz blocks and 868 blocks from coverage-guided fuzzing and targeted search, both formats, all three kernels |
+| every mode encoder (internal): modes 0, 1, 2–4, 5, 6–8, 9, 10, 12, 13 unsigned; 0, 1, 2–4, 5, 6–8, 9, 12, 13 signed | `bc6h.texcomp.encodeMode(signed, mode, pixels, out)` | differential on the same blocks, called directly, so every mode's block and its error estimate are compared whether or not it wins |
+| `tc_bc6h_decompress_rgb16f(blocks, w, h, is_signed, stride_bytes, out, size)` | `bc6h.decodeImage(src, dst, format)` (half bits) | differential on every encoded image, 200,000 random blocks of both formats (all 14 modes and the reserved codes), and padded rows |
+| `tc_bc6h_decompress_rgbaf` (float RGBA, alpha 1) | `bc6h.decodeImageF32(src, dst, format)` with 4 channels (3 gives RGB) | differential, f32 bits compared, on every encoded image and padded rows |
+| `tc_bc6h_decode_block_half` (internal) | `bc6h.decodeBlock(block, format)` | differential on the random blocks |
+| the SSE4.1, AVX2 and NEON selector kernels | not translated: they are bit-identical to the scalar search, which is | the differential tests run the original under all three x86 kernels against one port |
+| `tc_dds_bc6h_size`, `tc_dds_write_bc6h_memory` (texcomp.c) | none: they write a DDS container around the blocks, outside a codec's scope; Loomwork's bake tool writes its own containers | |
+| argument errors (`TC_ERROR_INVALID_ARGUMENT` for null pointers, zero sizes, short strides or buffers) | asserted instead: slices carry their lengths | |
+
+Behaviour kept from the original, because the output must match:
+`tc_float_to_half_bits` flushes every value below 2^-14 to signed zero (its
+subnormal branch shifts twice); and several mode packers write fields their
+decode does not read as the search assumed, so those blocks decode worse than
+the encoder's estimate (mode 0, signed modes 6–8 and signed mode 12 most of
+the time). doc/bc6h-quality.md measures what that costs.
