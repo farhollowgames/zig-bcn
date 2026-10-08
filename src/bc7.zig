@@ -249,3 +249,8 @@ test "the reserved mode decodes to transparent black" {
     const zero: [16]u8 = @splat(0);
     for (decodeBlock(&zero)) |p| try std.testing.expectEqual([4]u8{ 0, 0, 0, 0 }, p);
 }
+
+/// The BC7 partition patterns (subset of each pixel, 64 patterns of 16),
+/// for tools and tests.
+pub const partition2_table = bc7e.partition2;
+pub const partition3_table = bc7e.partition3;
