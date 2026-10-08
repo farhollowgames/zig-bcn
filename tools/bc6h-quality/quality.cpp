@@ -3,9 +3,12 @@
 // reference. Not part of `zig build test`; see doc/bc6h-quality.md and
 // build.sh.
 //
-//   quality [--dump <dir>] <image>...   (.exr, or .rgbf from dump_images.zig)
+//   quality [--dump <dir>] [--high <dir>] <image>...   (.exr, or .rgbf from dump_images.zig)
 //
 // --dump writes each loaded image as <dir>/<basename>.rgbf, for speed.zig.
+// --high also reports zig-bcn's high-quality streams, which speed.zig
+// writes as <dir>/<basename>.<uf16|sf16>.high.bc6h; their speed is
+// speed.zig's.
 
 #include <chrono>
 #include <cmath>
@@ -165,10 +168,12 @@ static void report(const Image &img, bool is_signed, const char *encoder, const 
 int main(int argc, char **argv) {
     std::printf("| image | format | encoder | log2 RMSE | mPSNR dB | Mpixel/s | modes chosen (mode:blocks) |\n|---|---|---|---|---|---|---|\n");
     const char *dump = nullptr;
+    const char *high = nullptr;
     int first = 1;
-    if (argc > 2 && std::strcmp(argv[1], "--dump") == 0) {
-        dump = argv[2];
-        first = 3;
+    while (argc > first + 1 && (std::strcmp(argv[first], "--dump") == 0 || std::strcmp(argv[first], "--high") == 0)) {
+        if (std::strcmp(argv[first], "--dump") == 0) dump = argv[first + 1];
+        else high = argv[first + 1];
+        first += 2;
     }
     for (int a = first; a < argc; ++a) {
         Image img;
@@ -207,6 +212,18 @@ int main(int argc, char **argv) {
             report(img, is_signed, "texcomp", tc, t_tc);
             report(img, is_signed, "texcomp scalar", tc_scalar, t_tc_scalar);
             report(img, is_signed, "DirectXTex", dx, t_dx);
+            if (high) {
+                std::string base = img.name.substr(img.name.find_last_of('/') + 1);
+                std::string path = std::string(high) + "/" + base.substr(0, base.find_last_of('.')) + (is_signed ? ".sf16" : ".uf16") + ".high.bc6h";
+                std::vector<uint8_t> hq(tc.size());
+                FILE *f = std::fopen(path.c_str(), "rb");
+                if (!f || std::fread(hq.data(), 1, hq.size(), f) != hq.size()) {
+                    std::fprintf(stderr, "%s: missing or short\n", path.c_str());
+                    return 1;
+                }
+                std::fclose(f);
+                report(img, is_signed, "zig-bcn high", hq, 1e30);
+            }
         }
     }
     return 0;

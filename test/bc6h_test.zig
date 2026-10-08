@@ -24,7 +24,7 @@ extern fn tc_bc6h_decompress_rgbaf(bc6h: [*]const u8, width: u32, height: u32, i
 const formats = [_]bcn.bc6h.Format{ .unsigned, .signed };
 const encoded_len = bcn.encodedLen(16, images.width, images.height);
 
-fn view(img: *const images.Hdr) bcn.Image(f32) {
+pub fn view(img: *const images.Hdr) bcn.Image(f32) {
     const floats: []const f32 = @as([*]const f32, @ptrCast(&img.pixels))[0 .. images.pixel_count * 3];
     return bcn.Image(f32).init(floats, images.width, images.height, 3);
 }
@@ -41,7 +41,7 @@ fn referenceEncode(img: *const images.Hdr, index: usize, format: bcn.bc6h.Format
 }
 
 /// The mode a block was encoded in, from its code bits; 14 for reserved.
-fn modeOf(block: *const [16]u8) usize {
+pub fn modeOf(block: *const [16]u8) usize {
     const b0 = block[0];
     if (b0 & 3 == 0) return 0;
     if (b0 & 3 == 1) return 1;
@@ -170,7 +170,7 @@ fn representable(x: f32, format: bcn.bc6h.Format) f64 {
     return std.math.clamp(x, lo, 65504);
 }
 
-fn logRmse(img: *const images.Hdr, decoded: *const [images.pixel_count][3]u16, format: bcn.bc6h.Format) f64 {
+pub fn logRmse(img: *const images.Hdr, decoded: *const [images.pixel_count][3]u16, format: bcn.bc6h.Format) f64 {
     var sum: f64 = 0;
     var n: f64 = 0;
     for (img.pixels, decoded) |p, d| for (0..3) |c| {
@@ -351,7 +351,7 @@ test "bc6h encodes and decodes padded rows like texcomp" {
 /// (kind 1), RGB row-major, little-endian.
 const corpus = @embedFile("bc6h_corpus.bin");
 
-fn corpusBlock(at: *usize) ?[16][3]f32 {
+pub fn corpusBlock(at: *usize) ?[16][3]f32 {
     if (at.* >= corpus.len) return null;
     var px: [16][3]f32 = undefined;
     const kind = corpus[at.*];
