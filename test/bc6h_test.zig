@@ -9,6 +9,10 @@ const common = @import("common.zig");
 
 const TcOptions = extern struct { signed_float: c_int, reserved: c_int };
 
+/// Prints which modes win and how many blocks each mode can encode, for
+/// studying the encoder; off so test output stays quiet.
+const print_stats = false;
+
 extern fn tc_bc6h_compress_rgb32f(rgb: [*]const f32, width: u32, height: u32, stride_bytes: usize, opt: ?*const TcOptions, out: [*]u8, out_size: usize) c_int;
 extern fn tc_bc6h_decompress_rgb16f(bc6h: [*]const u8, width: u32, height: u32, is_signed: c_int, stride_bytes: usize, out_rgb: [*]u16, out_size: usize) c_int;
 extern fn tc_bc6h_decode_block_half(blk: *const [16]u8, is_signed: c_int, out: *[16][3]u16) void;
@@ -89,7 +93,7 @@ test "bc6h encodes like texcomp under SIMD and scalar dispatch" {
             }
         }
     }
-    std.debug.print("\nbc6h modes chosen (uf16): {any}\nbc6h modes chosen (sf16): {any}\n", .{ mode_counts[0], mode_counts[1] });
+    if (print_stats) std.debug.print("\nbc6h modes chosen (uf16): {any}\nbc6h modes chosen (sf16): {any}\n", .{ mode_counts[0], mode_counts[1] });
 }
 
 test "bc6h decodes like texcomp" {
@@ -272,7 +276,7 @@ test "bc6h every mode encoder matches texcomp on fuzz blocks" {
             wins[fi][modeOf(&want)] += 1;
         }
     }
-    std.debug.print("\nfuzz encodable (uf16): {any}\nfuzz encodable (sf16): {any}\nfuzz wins (uf16): {any}\nfuzz wins (sf16): {any}\n", .{ tried[0], tried[1], wins[0], wins[1] });
+    if (print_stats) std.debug.print("\nfuzz encodable (uf16): {any}\nfuzz encodable (sf16): {any}\nfuzz wins (uf16): {any}\nfuzz wins (sf16): {any}\n", .{ tried[0], tried[1], wins[0], wins[1] });
     try m.finish();
 }
 
