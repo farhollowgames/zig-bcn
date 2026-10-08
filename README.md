@@ -5,7 +5,7 @@ BC1–BC7 and BC6H texture compression in pure Zig.
 zig-bcn encodes and decodes the block-compressed texture formats that every
 desktop GPU samples directly. Its encoders are translations of three proven
 open-source encoders, and tests show that they produce **the same bytes as
-the originals**. It has no dependencies beyond Zig's standard library, links
+[the originals](#licence-and-credits)**. It has no dependencies beyond Zig's standard library, links
 no libc or libc++, and never allocates: you pass the output buffer.
 
 | format | for | encoder | settings |
