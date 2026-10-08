@@ -18,7 +18,7 @@ port of bc7e.ispc, https://github.com/BinomialLLC/basis_universal (tag v2_50).
     Licensed under the Apache License, Version 2.0.
 
 -------------------------------------------------------------------------------
-BC6H encoder (src/bc6h.zig)
+BC6H encoder (src/texcomp_bc6h.zig)
 
 Translated from TinyEXR tools/texcomp/src/texcomp_bc6h.c,
 https://github.com/syoyo/tinyexr (commit 644148d).

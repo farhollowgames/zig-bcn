@@ -101,7 +101,7 @@ original's own output depends on the compiler (doc/coverage.md, BC6H).
 | `tc_bc6h_options_init` | none needed: `Format` is a plain argument | the reference calls it, with an options struct and with `NULL` |
 | `tc_bc6h_compressed_size` | `encodedLen(16, w, h)` | differential for every size from 1×1 to 69×69. texcomp returns 0 for a zero width or height; zig-bcn asserts sizes are positive |
 | `tc_float_to_half_bits` (public in texcomp) | `bc6h.floatToHalfBits` | differential on all 2^32 float bit patterns |
-| the block encoders `tc_encode_bc6h_block_uf16`, `_sf16` (internal) | `bc6h.encodeBlock(pixels, format)` | differential: 20,000 fuzz blocks and 847 coverage-guided fuzzing blocks, both formats, all three kernels |
+| the block encoders `tc_encode_bc6h_block_uf16`, `_sf16` (internal) | `bc6h.encodeBlock(pixels, format)` | differential: 20,000 fuzz blocks and 868 blocks from coverage-guided fuzzing and targeted search, both formats, all three kernels |
 | every mode encoder (internal): modes 0, 1, 2–4, 5, 6–8, 9, 10, 12, 13 unsigned; 0, 1, 2–4, 5, 6–8, 9, 12, 13 signed | `bc6h.texcomp.encodeMode(signed, mode, pixels, out)` | differential on the same blocks, called directly, so every mode's block and its error estimate are compared whether or not it wins |
 | `tc_bc6h_decompress_rgb16f(blocks, w, h, is_signed, stride_bytes, out, size)` | `bc6h.decodeImage(src, dst, format)` (half bits) | differential on every encoded image, 200,000 random blocks of both formats (all 14 modes and the reserved codes), and padded rows |
 | `tc_bc6h_decompress_rgbaf` (float RGBA, alpha 1) | `bc6h.decodeImageF32(src, dst, format)` with 4 channels (3 gives RGB) | differential, f32 bits compared, on every encoded image and padded rows |

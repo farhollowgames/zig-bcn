@@ -157,8 +157,8 @@ const modes = [14]Mode{
     // 0: 10-bit base, 5-bit deltas.
     .{ .base_bits = 10, .delta_bits = .{ 5, 5, 5 }, .regions = 2, .transformed = true, .runs = &.{
         run(2, G, 4, 1), run(2, B, 4, 1), run(3, B, 4, 1), run(0, R, 0, 10), run(0, G, 0, 10), run(0, B, 0, 10),
-        run(1, R, 0, 5), run(3, G, 4, 1), run(2, G, 0, 4), run(1, G, 0, 5), run(3, B, 0, 1), run(3, G, 0, 4),
-        run(1, B, 0, 5), run(3, B, 1, 1), run(2, B, 0, 4), run(2, R, 0, 5), run(3, B, 2, 1), run(3, R, 0, 5),
+        run(1, R, 0, 5), run(3, G, 4, 1), run(2, G, 0, 4), run(1, G, 0, 5),  run(3, B, 0, 1),  run(3, G, 0, 4),
+        run(1, B, 0, 5), run(3, B, 1, 1), run(2, B, 0, 4), run(2, R, 0, 5),  run(3, B, 2, 1),  run(3, R, 0, 5),
         run(3, B, 3, 1),
     } },
     // 1: 7-bit base, 6-bit deltas.
@@ -234,13 +234,13 @@ const modes = [14]Mode{
     } },
     // 12: 12-bit base, 8-bit delta.
     .{ .base_bits = 12, .delta_bits = .{ 8, 8, 8 }, .regions = 1, .transformed = true, .runs = &.{
-        run(0, R, 0, 10),         run(0, G, 0, 10), run(0, B, 0, 10),         run(1, R, 0, 8), runReversed(0, R, 10, 2),
-        run(1, G, 0, 8),          runReversed(0, G, 10, 2), run(1, B, 0, 8), runReversed(0, B, 10, 2),
+        run(0, R, 0, 10), run(0, G, 0, 10),         run(0, B, 0, 10), run(1, R, 0, 8),          runReversed(0, R, 10, 2),
+        run(1, G, 0, 8),  runReversed(0, G, 10, 2), run(1, B, 0, 8),  runReversed(0, B, 10, 2),
     } },
     // 13: 16-bit base, 4-bit delta.
     .{ .base_bits = 16, .delta_bits = .{ 4, 4, 4 }, .regions = 1, .transformed = true, .runs = &.{
-        run(0, R, 0, 10),         run(0, G, 0, 10), run(0, B, 0, 10),         run(1, R, 0, 4), runReversed(0, R, 10, 6),
-        run(1, G, 0, 4),          runReversed(0, G, 10, 6), run(1, B, 0, 4), runReversed(0, B, 10, 6),
+        run(0, R, 0, 10), run(0, G, 0, 10),         run(0, B, 0, 10), run(1, R, 0, 4),          runReversed(0, R, 10, 6),
+        run(1, G, 0, 4),  runReversed(0, G, 10, 6), run(1, B, 0, 4),  runReversed(0, B, 10, 6),
     } },
 };
 
