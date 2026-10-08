@@ -116,3 +116,14 @@ subnormal branch shifts twice); and several mode packers write fields their
 decode does not read as the search assumed, so those blocks decode worse than
 the encoder's estimate (mode 0, signed modes 6–8 and signed mode 12 most of
 the time). doc/bc6h-quality.md measures what that costs.
+
+zig-bcn additions, beyond texcomp: `bc6h.Quality.high`
+(`encodeBlockQuality`, `encodeImageQuality`), zig-bcn's own encoder in
+`src/bc6h_high.zig`, which fixes the behaviour above without changing
+`.fast`. It has no original to match, so `test/bc6h_high_test.zig` proves
+it differently: every block it writes decodes, in texcomp's decoder and
+zig-bcn's, to exactly the error it reported; that error is never above
+`.fast`'s; every flat colour of both formats is stored exactly; every
+mode's fields pack and decode back; its float-to-half conversion is IEEE
+round to nearest even on all 2^32 floats; and it improves on `.fast` by
+set factors on flat, sky and gradient images.

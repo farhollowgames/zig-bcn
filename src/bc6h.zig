@@ -4,6 +4,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const texcomp_bc6h = @import("texcomp_bc6h.zig");
+const bc6h_high = @import("bc6h_high.zig");
 const image = @import("image.zig");
 
 pub const block_bytes = 16;
@@ -50,6 +51,39 @@ pub fn encodeImageRows(src: image.Image(f32), dst: []u8, format: Format, rows: i
         }
     }.f);
 }
+
+pub const Quality = enum {
+    /// texcomp's encoder, byte for byte (`encodeBlock`): very fast, weaker
+    /// on flat and smooth HDR, and flushes values below 2^-14 to zero.
+    fast,
+    /// zig-bcn's own search over every mode, scored by the exact decoded
+    /// error (`bc6h_high.zig`); never worse than `fast` on that error.
+    high,
+};
+
+/// Encodes 16 RGB texels at the chosen quality; `.fast` is `encodeBlock`.
+pub fn encodeBlockQuality(pixels: *const [16][3]f32, format: Format, quality: Quality) [block_bytes]u8 {
+    return switch (quality) {
+        .fast => encodeBlock(pixels, format),
+        .high => bc6h_high.encodeBlock(pixels, format).block,
+    };
+}
+
+/// `encodeImage` at the chosen quality.
+pub fn encodeImageQuality(src: image.Image(f32), dst: []u8, format: Format, quality: Quality) void {
+    src.check();
+    assert(src.channels >= 3);
+    const Ctx = struct { src: image.Image(f32), format: Format, quality: Quality };
+    image.encodeBlocks(block_bytes, src.width, src.height, dst, Ctx{ .src = src, .format = format, .quality = quality }, struct {
+        fn f(ctx: Ctx, bx: u32, by: u32) [block_bytes]u8 {
+            return encodeBlockQuality(&ctx.src.block(3, bx, by), ctx.format, ctx.quality);
+        }
+    }.f);
+}
+
+/// The high-quality encoder's internals, for tests and tools; not a stable
+/// interface.
+pub const high = bc6h_high;
 
 /// Decodes into the first three channels of `dst` as half-float bits.
 pub fn decodeImage(src: []const u8, dst: image.ImageMut(u16), format: Format) void {
@@ -141,9 +175,9 @@ test "half to float is exact" {
 /// One run of bits in a mode's header: `count` bits into endpoint `ep`
 /// (0 to 3) of channel `ch`, starting at bit `shift`. Runs marked `reversed`
 /// hold their bits in reverse order.
-const Run = struct { ep: u2, ch: u2, shift: u5, count: u5, reversed: bool = false };
+pub const Run = struct { ep: u2, ch: u2, shift: u5, count: u5, reversed: bool = false };
 
-const Mode = struct {
+pub const Mode = struct {
     /// Endpoint precision, then delta precision per channel.
     base_bits: u5,
     delta_bits: [3]u5,
@@ -167,8 +201,8 @@ const B = 2;
 
 /// Header layouts after the mode code, in bit order, from the BC6H format
 /// definition. Indexed by mode number; the code each mode is read from is in
-/// `mode_by_code`.
-const modes = [14]Mode{
+/// `modeOf`. Public for the high-quality encoder, which packs through them.
+pub const modes = [14]Mode{
     // 0: 10-bit base, 5-bit deltas.
     .{ .base_bits = 10, .delta_bits = .{ 5, 5, 5 }, .regions = 2, .transformed = true, .runs = &.{
         run(2, G, 4, 1), run(2, B, 4, 1), run(3, B, 4, 1), run(0, R, 0, 10), run(0, G, 0, 10), run(0, B, 0, 10),
@@ -261,7 +295,7 @@ const modes = [14]Mode{
 
 /// The mode read from the 5-bit code (or 2-bit, for modes 0 and 1); null
 /// for the reserved codes.
-fn modeOf(code: u5) ?u4 {
+pub fn modeOf(code: u5) ?u4 {
     if (code & 3 == 0) return 0;
     if (code & 3 == 1) return 1;
     return switch (code) {
@@ -292,14 +326,14 @@ const BitReader = struct {
     }
 };
 
-fn signExtend(v: i32, bits: u5) i32 {
+pub fn signExtend(v: i32, bits: u5) i32 {
     assert(bits >= 1 and bits <= 16);
     const shift: u5 = @intCast(32 - @as(u6, bits));
     return (v << shift) >> shift;
 }
 
 /// An endpoint value expanded to the 16-bit interpolation domain.
-fn unquantize(v: i32, bits: u5, format: Format) i32 {
+pub fn unquantize(v: i32, bits: u5, format: Format) i32 {
     switch (format) {
         .unsigned => {
             if (bits >= 15) return v;
@@ -325,7 +359,7 @@ fn unquantize(v: i32, bits: u5, format: Format) i32 {
 
 /// Scales an interpolated value to half-float bits: by 31/64 for unsigned,
 /// 31/32 of the magnitude for signed.
-fn finish(v: i32, format: Format) u16 {
+pub fn finish(v: i32, format: Format) u16 {
     switch (format) {
         .unsigned => {
             assert(v >= 0 and v <= 0xffff);

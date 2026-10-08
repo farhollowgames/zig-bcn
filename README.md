@@ -15,7 +15,7 @@ no libc or libc++, and never allocates: you pass the output buffer.
 | BC4 | one channel (masks, roughness), 4 bpp | stb_dxt | none |
 | BC5 | two channels (tangent-space normals), 8 bpp | stb_dxt | none |
 | BC7 | high-quality RGB or RGBA, 8 bpp | bc7e (basis_universal's scalar port) | seven levels from `ultrafast` to `slowest`, perceptual or linear error, and every bc7e parameter |
-| BC6H | HDR RGB half floats, unsigned or signed, 8 bpp | texcomp (TinyEXR) | `unsigned` or `signed` |
+| BC6H | HDR RGB half floats, unsigned or signed, 8 bpp | texcomp (TinyEXR), and zig-bcn's own high-quality search | `unsigned` or `signed`; quality `fast` (texcomp) or `high` |
 
 Every format also has a decoder, written for zig-bcn and checked byte for
 byte against texcomp's decoders.
@@ -102,7 +102,10 @@ Format specifics:
   encodes in one chosen mode, partition, rotation and index selector,
   returning the error measure too.
 - **BC6H** takes `f32` RGB (3 or more channels) and `Format.unsigned` or
-  `.signed`. `decodeImage` writes half-float bits (`u16`),
+  `.signed`. `encodeBlock` and `encodeImage` are texcomp's encoder;
+  `encodeBlockQuality` and `encodeImageQuality` take `Quality.fast` (the
+  same) or `.high`, zig-bcn's own encoder, for shipped assets (see Quality
+  and speed). `decodeImage` writes half-float bits (`u16`),
   `decodeImageF32` floats; `floatToHalfBits` and `halfToF32` convert.
 
 ## How the tests prove equivalence
@@ -139,11 +142,19 @@ on one thread, 62 ms on 32). The BC7 port runs at
 the speed of texcomp's scalar C (texcomp's AVX2 build is about 2.7 times
 faster).
 
-texcomp's BC6H is fast, about 12 megapixels a second on one core, and close
-to Microsoft's DirectXTex on photographs (43.9 against 45.4 dB mPSNR). It is
-weaker on flat and smooth HDR content such as skies and light sources, and
-it flushes values below 2^-14 to zero. See
-[`doc/bc6h-quality.md`](doc/bc6h-quality.md).
+texcomp's BC6H (`Quality.fast`) is fast, about 12 megapixels a second on
+one core, and close to Microsoft's DirectXTex on photographs (43.9 against
+45.4 dB mPSNR), but weaker on flat and smooth HDR content such as skies and
+light sources, and it flushes values below 2^-14 to zero.
+
+`Quality.high` is zig-bcn's own BC6H encoder, not a translation: a search
+over every mode, scored by the exact error of what decodes. It beats
+DirectXTex on that photograph (46.0 dB) and matches or beats it on every
+test image, flat and smooth HDR included, at about 0.5 megapixels a second
+on one core, 25 times DirectXTex's speed. With no original to match, its
+tests prove instead that every block decodes, in texcomp's decoder and
+zig-bcn's, to exactly the error the encoder reported, and that it is never
+worse than `.fast`. See [`doc/bc6h-quality.md`](doc/bc6h-quality.md).
 
 ## Licence and credits
 

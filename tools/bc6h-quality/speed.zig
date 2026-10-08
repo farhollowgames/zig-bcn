@@ -1,5 +1,7 @@
-//! Encode speed of zig-bcn's BC6H on .rgbf images (see dump_images.zig and
-//! quality.cpp --dump), single thread, best of three runs.
+//! Encode speed of zig-bcn's BC6H at both qualities on .rgbf images (see
+//! dump_images.zig and quality.cpp --dump), single thread, best of three
+//! runs. Also writes each `.high` stream as <image>.<uf16|sf16>.high.bc6h,
+//! for quality.cpp --high.
 //!   zig run -O ReleaseFast --dep bcn -Mroot=tools/bc6h-quality/speed.zig -Mbcn=src/bcn.zig -- <image.rgbf>...
 
 const std = @import("std");
@@ -18,15 +20,22 @@ pub fn main(init: std.process.Init) !void {
         const src = bcn.Image(f32).init(floats, width, height, 3);
         const dst = try arena.alloc(u8, bcn.encodedLen(16, width, height));
         for ([_]bcn.bc6h.Format{ .unsigned, .signed }) |format| {
-            var best_ns: u64 = std.math.maxInt(u64);
-            for (0..3) |_| {
-                const t0 = std.Io.Clock.awake.now(init.io);
-                bcn.bc6h.encodeImage(src, dst, format);
-                const ns: u64 = @intCast(t0.durationTo(std.Io.Clock.awake.now(init.io)).nanoseconds);
-                best_ns = @min(best_ns, ns);
+            for ([_]bcn.bc6h.Quality{ .fast, .high }) |quality| {
+                var best_ns: u64 = std.math.maxInt(u64);
+                for (0..3) |_| {
+                    const t0 = std.Io.Clock.awake.now(init.io);
+                    bcn.bc6h.encodeImageQuality(src, dst, format, quality);
+                    const ns: u64 = @intCast(t0.durationTo(std.Io.Clock.awake.now(init.io)).nanoseconds);
+                    best_ns = @min(best_ns, ns);
+                }
+                const mpix = @as(f64, @floatFromInt(@as(u64, width) * height)) / (@as(f64, @floatFromInt(best_ns)) / 1e9) / 1e6;
+                std.debug.print("{s} {t} {t}: {d:.3} Mpixel/s\n", .{ path, format, quality, mpix });
+                if (quality == .high) {
+                    const stem = path[0 .. path.len - ".rgbf".len];
+                    const out = try std.fmt.allocPrint(arena, "{s}.{s}.high.bc6h", .{ stem, if (format == .unsigned) "uf16" else "sf16" });
+                    try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = out, .data = dst });
+                }
             }
-            const mpix = @as(f64, @floatFromInt(@as(u64, width) * height)) / (@as(f64, @floatFromInt(best_ns)) / 1e9) / 1e6;
-            std.debug.print("{s} {t}: {d:.2} Mpixel/s\n", .{ path, format, mpix });
         }
     }
 }
