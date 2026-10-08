@@ -4,4 +4,5 @@
 
 comptime {
     _ = @import("stb_dxt_test.zig");
+    _ = @import("bc6h_test.zig");
 }

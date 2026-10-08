@@ -49,6 +49,15 @@ pub fn build(b: *std.Build) void {
         .root = b.path("reference"),
         .files = &.{
             "shim/stb_dxt_impl.c",
+        },
+        .flags = c_flags,
+    });
+    // texcomp's BC6H error sums overflow int32 (undefined behaviour); with
+    // -fwrapv they wrap, which every compiler and the port agree on, while
+    // optimizers that exploit the overflow change the chosen blocks.
+    reference.root_module.addCSourceFiles(.{
+        .root = b.path("reference"),
+        .files = &.{
             "shim/texcomp_stubs.c",
             "texcomp/src/texcomp.c",
             "texcomp/src/texcomp_bc1.c",
@@ -58,7 +67,7 @@ pub fn build(b: *std.Build) void {
             "texcomp/src/texcomp_bc6h_decode.c",
             "texcomp/src/texcomp_bc7.c",
         },
-        .flags = c_flags,
+        .flags = c_flags ++ &[_][]const u8{"-fwrapv"},
     });
     reference.root_module.addCSourceFiles(.{
         .root = b.path("reference"),
