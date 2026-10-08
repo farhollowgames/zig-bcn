@@ -27,8 +27,12 @@ void ref_bc7e_params_init(unsigned level, int perceptual, void *out) {
     memcpy(out, &p, sizeof(p));
 }
 
-void ref_bc7e_compress_blocks(unsigned num_blocks, uint64_t *blocks, const uint32_t *pixels, const void *params) {
-    bc7e_scalar::bc7e_compress_blocks(num_blocks, blocks, pixels, (const bc7e_compress_block_params *)params, nullptr);
+void ref_bc7e_compress_blocks(unsigned num_blocks, uint64_t *blocks, const uint32_t *pixels, const void *params, uint8_t *used_lut) {
+    bc7e_scalar::bc7e_compress_blocks(num_blocks, blocks, pixels, (const bc7e_compress_block_params *)params, used_lut);
+}
+
+uint64_t ref_bc7e_compress_block_single_mode(uint64_t *block, const uint32_t *pixels, const void *params, unsigned mode, int partition, unsigned rotation, unsigned index_selector) {
+    return bc7e_scalar::bc7e_compress_block_single_mode(block, pixels, (const bc7e_compress_block_params *)params, mode, partition, rotation, index_selector);
 }
 
 }
