@@ -8,6 +8,9 @@ const image = @import("image.zig");
 pub const block_bytes = 16;
 pub const Level = bc7e.Level;
 pub const Params = bc7e.Params;
+/// The encoder with the original's function shapes, for callers porting code
+/// written against bc7e.
+pub const bc7e_api = bc7e;
 
 /// Encodes 16 RGBA pixels (row-major).
 pub fn encodeBlock(pixels: *const [16][4]u8, params: *const Params) [block_bytes]u8 {

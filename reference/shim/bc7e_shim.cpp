@@ -10,7 +10,8 @@ void ref_bc7e_init(void) { bc7e_scalar::bc7e_compress_block_init(); }
 
 unsigned ref_bc7e_params_size(void) { return (unsigned)sizeof(bc7e_compress_block_params); }
 
-// Levels run from fastest (0) to slowest (6), the same order as the Zig port.
+// Levels run from fastest (0) to slowest (6), the same order as the Zig port;
+// 7 is the base init.
 void ref_bc7e_params_init(unsigned level, int perceptual, void *out) {
     bc7e_compress_block_params p;
     memset(&p, 0, sizeof(p)); // padding is compared byte for byte
@@ -22,7 +23,8 @@ void ref_bc7e_params_init(unsigned level, int perceptual, void *out) {
     case 3: bc7e_scalar::bc7e_compress_block_params_init_basic(&p, perc); break;
     case 4: bc7e_scalar::bc7e_compress_block_params_init_slow(&p, perc); break;
     case 5: bc7e_scalar::bc7e_compress_block_params_init_veryslow(&p, perc); break;
-    default: bc7e_scalar::bc7e_compress_block_params_init_slowest(&p, perc); break;
+    case 6: bc7e_scalar::bc7e_compress_block_params_init_slowest(&p, perc); break;
+    default: bc7e_scalar::bc7e_compress_block_params_init(&p, perc); break; // the base the others start from
     }
     memcpy(out, &p, sizeof(p));
 }

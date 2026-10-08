@@ -31,6 +31,47 @@ test "bc7 params initialize like bc7e" {
         const got = Params.init(level, perceptual);
         try std.testing.expectEqualSlices(u8, std.mem.asBytes(&want), std.mem.asBytes(&got));
     };
+    for ([_]bool{ false, true }) |perceptual| {
+        var want: Params = undefined;
+        ref_bc7e_params_init(7, @intFromBool(perceptual), &want);
+        const got = Params.initDefaults(perceptual);
+        try std.testing.expectEqualSlices(u8, std.mem.asBytes(&want), std.mem.asBytes(&got));
+    }
+}
+
+test "bc7 encodes like bc7e with the base settings" {
+    ref_bc7e_init();
+    const blocks = craftedBlocks(3000, 21);
+    var m: common.Mismatches = .{ .label = "base settings" };
+    for ([_]bool{ false, true }) |perceptual| {
+        const params = Params.initDefaults(perceptual);
+        compareBlocks("crafted", "base", &blocks, &params, &m);
+    }
+    try m.finish();
+}
+
+test "bc7 single mode takes rotation and index selector as the original does" {
+    // The original masks rotation to two bits and the index selector to one,
+    // but any non-zero rotation still switches to the linear metric.
+    ref_bc7e_init();
+    const blocks = craftedBlocks(260, 31);
+    var m: common.Mismatches = .{ .label = "single mode raw" };
+    for ([_]bool{ false, true }) |perceptual| {
+        const params = Params.init(.slow, perceptual);
+        for (&blocks) |*px| {
+            var words: [16]u32 = @bitCast(px.*);
+            for (4..6) |mode| for (0..8) |rotation| for (0..4) |index_selector| {
+                if (mode == 5 and index_selector > 0) continue;
+                var want: [2]u64 = undefined;
+                const want_err = ref_bc7e_compress_block_single_mode(&want, &words, &params, @intCast(mode), -1, @intCast(rotation), @intCast(index_selector));
+                var got: [16]u8 = undefined;
+                const got_err = bc7.bc7e_api.compressBlockSingleMode(&got, px, &params, @intCast(mode), -1, @intCast(rotation), @intCast(index_selector));
+                m.check("block", @intCast(mode), @intCast(rotation), px.*, std.mem.asBytes(&want), &got);
+                m.check("error", @intCast(mode), @intCast(rotation), px.*, std.mem.asBytes(&want_err), std.mem.asBytes(&got_err));
+            };
+        }
+    }
+    try m.finish();
 }
 
 /// Encodes `blocks` with both encoders and compares blocks and LUT flags.

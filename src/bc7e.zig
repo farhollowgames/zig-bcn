@@ -73,7 +73,7 @@ pub const Params = extern struct {
     }
 
     pub fn init(level: Level, perceptual: bool) Params {
-        var p = initBase(perceptual);
+        var p = initDefaults(perceptual);
         switch (level) {
             .slowest => {
                 p.opaque_settings.max_mode13_partitions_to_try = 4;
@@ -165,7 +165,10 @@ pub const Params = extern struct {
         return p;
     }
 
-    fn initBase(perceptual: bool) Params {
+    /// The base settings every level starts from
+    /// (bc7e_compress_block_params_init): all modes, one partition each,
+    /// no p-bit search and no uber search.
+    pub fn initDefaults(perceptual: bool) Params {
         return .{
             .max_partitions_mode = .{ max_partitions0, max_partitions1, max_partitions2, max_partitions3, 0, 0, 0, max_partitions7 },
             .use_luts = true,
@@ -1160,7 +1163,9 @@ fn evaluateSolution(
     var wb = f32FromInt(params.weights[2]);
     const wa = f32FromInt(params.weights[3]);
 
-    var weighted_colors: [16][4]f32 = @splat(@splat(0));
+    // Entries 1..n-2 get only nc channels; the alpha of those is read only
+    // when nc is 4.
+    var weighted_colors: [16][4]f32 = undefined;
     weighted_colors[0] = vec4FFromColor(actual_min_color);
     weighted_colors[n - 1] = vec4FFromColor(actual_max_color);
 
@@ -1356,35 +1361,41 @@ fn evaluateSolution(
             weighted_colors_cb[i] = b - y;
         }
 
-        for (0..num_pixels) |i| {
-            const r = f32FromInt(pixels[i][0]);
-            const g = f32FromInt(pixels[i][1]);
-            const b = f32FromInt(pixels[i][2]);
-            const a = f32FromInt(pixels[i][3]);
+        // Two copies of the loop, as in the original, so the alpha test is
+        // not in the inner loop.
+        inline for (.{ false, true }) |has_alpha| {
+            if (params.has_alpha == has_alpha) {
+                for (0..num_pixels) |i| {
+                    const r = f32FromInt(pixels[i][0]);
+                    const g = f32FromInt(pixels[i][1]);
+                    const b = f32FromInt(pixels[i][2]);
+                    const a = f32FromInt(pixels[i][3]);
 
-            const y = r * 0.2126 + g * 0.7152 + b * 0.0722;
-            const cr = r - y;
-            const cb = b - y;
+                    const y = r * 0.2126 + g * 0.7152 + b * 0.0722;
+                    const cr = r - y;
+                    const cb = b - y;
 
-            var best_err: f32 = 1e+10;
-            var best_sel: i32 = 0;
+                    var best_err: f32 = 1e+10;
+                    var best_sel: i32 = 0;
 
-            for (0..n) |j| {
-                const dl = y - weighted_colors_y[j];
-                const dcr = cr - weighted_colors_cr[j];
-                const dcb = cb - weighted_colors_cb[j];
-                const err = if (params.has_alpha)
-                    err4(wr, wg, wb, wa, dl, dcr, dcb, a - weighted_colors[j][3])
-                else
-                    err3(wr, wg, wb, dl, dcr, dcb);
-                if (err < best_err) {
-                    best_err = err;
-                    best_sel = @intCast(j);
+                    for (0..n) |j| {
+                        const dl = y - weighted_colors_y[j];
+                        const dcr = cr - weighted_colors_cr[j];
+                        const dcb = cb - weighted_colors_cb[j];
+                        const err = if (has_alpha)
+                            err4(wr, wg, wb, wa, dl, dcr, dcb, a - weighted_colors[j][3])
+                        else
+                            err3(wr, wg, wb, dl, dcr, dcb);
+                        if (err < best_err) {
+                            best_err = err;
+                            best_sel = @intCast(j);
+                        }
+                    }
+
+                    total_errf += best_err;
+                    temp[i] = best_sel;
                 }
             }
-
-            total_errf += best_err;
-            temp[i] = best_sel;
         }
     }
 

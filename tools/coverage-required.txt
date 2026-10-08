@@ -22,11 +22,55 @@ texcomp/src/texcomp_bc3.c tc_bc3_decompress_rgba8 1 6
 texcomp/src/texcomp_bc5.c tc_decode_bc4_block
 texcomp/src/texcomp_bc5.c tc_bc5_decompress_rgba8 9 9
 
-# bc7e scalar: every function.
+# bc7e scalar: every function, except as declared below (doc/coverage.md, BC7).
 bc7e/basisu_bc7e_scalar.cpp *
+# Public entry points. compress_blocks: the uninitialized-codec path (the
+# port builds its tables at compile time and has no init) and its asserts on
+# the masks. single_mode: its asserts on the partition argument and the
+# release-build clamps behind them, reachable only by breaking the contract.
+bc7e/basisu_bc7e_scalar.cpp _ZN11bc7e_scalar20bc7e_compress_blocksEjPmPKjPKNS_26bc7e_compress_block_paramsEPh 5 7
+bc7e/basisu_bc7e_scalar.cpp _ZN11bc7e_scalar31bc7e_compress_block_single_modeEPmPKjPKNS_26bc7e_compress_block_paramsEjijj 2 14
+# Assert failure branches only.
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL16safe_cast_uint16Ei 0 6
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL11scale_colorEPKNS_12color_quad_iEPKNS_28color_cell_compressor_paramsE 0 7
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL32color_cell_compression_est_mode7EjPKNS_28color_cell_compressor_paramsEmjPKNS_12color_quad_iE 0 9
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL26color_cell_compression_estEjPKNS_28color_cell_compressor_paramsEmjPKNS_12color_quad_iE 0 7
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL23estimate_partition_listEjPKNS_12color_quad_iEPKNS_26bc7e_compress_block_paramsEPNS_8solutionEi 0 2
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL24handle_alpha_block_mode5EPKNS_12color_quad_iEPKNS_26bc7e_compress_block_paramsEPNS_28color_cell_compressor_paramsEjjPNS_24bc7_optimization_resultsEPm 0 2
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL24handle_alpha_block_mode4EPKNS_12color_quad_iEPKNS_26bc7e_compress_block_paramsEPNS_28color_cell_compressor_paramsEjjPNS_24bc7_optimization_resultsEPm 0 2
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL16encode_bc7_blockEPvPKNS_24bc7_optimization_resultsE 0 5
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL14set_block_bitsEPhjjPj 0 3
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZL14float_to_uint8f 0 6
+# Asserts, plus branches the enclosing conditions decide (doc/coverage.md).
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL19handle_opaque_blockEPvPKNS_12color_quad_iEPKNS_26bc7e_compress_block_paramsEPNS_28color_cell_compressor_paramsEiPmPb 2 22
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL22color_cell_compressionEjPKNS_28color_cell_compressor_paramsEPNS_29color_cell_compressor_resultsEPKNS_26bc7e_compress_block_paramsEjPKNS_12color_quad_iEb 0 3
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL22fixDegenerateEndpointsEjPNS_12color_quad_iES1_PKNS_5vec4FES4_j 5 8
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL17evaluate_solutionEPKNS_12color_quad_iES2_PKjPKNS_28color_cell_compressor_paramsEPNS_29color_cell_compressor_resultsEjS2_ 66 3
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL18estimate_partitionEjPKNS_12color_quad_iEPKNS_26bc7e_compress_block_paramsE 7 2
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL18handle_alpha_blockEPvPKNS_12color_quad_iEPKNS_26bc7e_compress_block_paramsEPNS_28color_cell_compressor_paramsEjjiPmPb 1 9
+# Called only from bc7e_compress_blocks, which always asks for the flag.
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL18handle_block_solidEPvjjjjPb 0 1
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL25handle_opaque_block_mode6EPvPKNS_12color_quad_iEPKNS_26bc7e_compress_block_paramsEPNS_28color_cell_compressor_paramsEPb 0 1
+# Helpers the original declares [[maybe_unused]] or never calls; not ported.
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL6clampuEjjj 1 0
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL11saturate255Ef 1 0
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL9minimumubEhh 1 0
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL10minimumu64Emm 1 0
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL9maximumubEhh 1 0
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL8maximumiEii 1 0
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL6swapubEPhS0_ 1 0
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL6squareEi 1 0
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL17component_min_rgbEPKNS_12color_quad_iES2_ 8 0
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZN11bc7e_scalarL17component_max_rgbEPKNS_12color_quad_iES2_ 8 0
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZL5clampIjET_S0_S0_S0_ 1 0
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZL3minIhET_S0_S0_ 1 0
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZL3minImET_S0_S0_ 1 0
+bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZL3maxIhET_S0_S0_ 1 0
 
-# texcomp's BC7 decoder, the oracle for the Zig decoder.
-texcomp/src/texcomp_bc7.c tc_bc7_decompress_rgba8
+# texcomp's BC7 decoder, the oracle for the Zig decoder: the argument checks
+# of the image decoder, and the bit reader's 32-bit case (reads are at most
+# 8 bits).
+texcomp/src/texcomp_bc7.c tc_bc7_decompress_rgba8 1 6
 texcomp/src/texcomp_bc7.c texcomp_bc7.c:tc_bc7_decode_block
-texcomp/src/texcomp_bc7.c texcomp_bc7.c:tc_bc7_dec_rb
+texcomp/src/texcomp_bc7.c texcomp_bc7.c:tc_bc7_dec_rb 0 1
 texcomp/src/texcomp_bc7.c texcomp_bc7.c:tc_bc7_dec_interp
