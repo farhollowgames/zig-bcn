@@ -20,6 +20,10 @@ no libc or libc++, and never allocates: you pass the output buffer.
 Every format also has a decoder, written for zig-bcn and checked byte for
 byte against texcomp's decoders.
 
+This port was written by Claude (Anthropic's AI model) for Farhollow Games.
+How the code was verified can be found
+[below](#how-the-tests-prove-equivalence).
+
 Requires Zig 0.17.0.
 
 ## Use
