@@ -8,8 +8,10 @@
 //! the same bytes as the C; test/bc6h_test.zig checks that against the C
 //! under both its SIMD and its scalar dispatch.
 //!
-//! Only the scalar selector search is translated: the original's SSE4.1, AVX2
-//! and NEON kernels are documented, and tested here, to be bit-identical to it.
+//! The selector search is the original's scalar search run on a block's 16
+//! texels at once, in vectors, as its SSE4.1, AVX2 and NEON kernels do; the
+//! original documents those, and the tests here check them, to be
+//! bit-identical to the scalar search.
 //! The C repeats one partition search and refinement in each of its ten
 //! two-region encoders with different constants; here that search is
 //! `twoRegion`, configured per mode, while each mode keeps its own packing.
@@ -145,27 +147,53 @@ fn unquantSf16ToSmag(q: i32) i32 {
     return unquantNToSmag(q, 10);
 }
 
-fn err3Mag(a: [3]u32, r: u32, g: u32, b: u32) u32 {
-    const dr = @as(i64, a[0]) - r;
-    const dg = @as(i64, a[1]) - g;
-    const db = @as(i64, a[2]) - b;
-    // The C sums these squares in int32, which overflows when all three
-    // differences pass about 26754 (undefined behaviour in C). Compiled, the
-    // sum wraps and the cast to uint32_t restores it exactly, because the
-    // true sum (at most 3 * 31743^2) always fits in 32 bits; the SIMD kernels
-    // compute it unsigned. This is that true sum.
-    const e = dr * dr + dg * dg + db * db;
-    assert(e >= 0 and e <= maxInt(u32));
-    return @intCast(e);
+/// One value per texel of a block.
+const Lanes = @Vector(16, i32);
+const LaneErrors = @Vector(16, u32);
+
+/// A block's values, magnitudes or quantized endpoints, as one vector per
+/// channel. Both fit 17 bits with the sign.
+fn channelLanes(comptime signed: bool, target: *const Target(signed)) [3]Lanes {
+    var lanes: [3][16]i32 = undefined;
+    for (target, 0..) |t, i| {
+        for (0..3) |c| lanes[c][i] = @intCast(t[c]);
+    }
+    return .{ lanes[0], lanes[1], lanes[2] };
 }
 
-fn err3Smag(a: [3]i32, r: i32, g: i32, b: i32) u32 {
-    const dr = @as(i64, a[0]) - r;
-    const dg = @as(i64, a[1]) - g;
-    const db = @as(i64, a[2]) - b;
-    const e: u64 = @intCast(dr * dr + dg * dg + db * db);
-    return if (e > maxInt(u32)) maxInt(u32) else @intCast(e);
+/// Each texel's squared distance to the colour `p`, as the C computes it.
+/// A difference is at most 63486, so its square fits 32 bits. Unsigned, the
+/// sum (at most 3 * 31743^2) fits too: the C's int32 sum overflows past
+/// about 26754 per channel (undefined behaviour in C), and compiled it wraps,
+/// which its cast to uint32_t undoes. Signed, the sum can pass 32 bits and
+/// the C saturates it at maxInt(u32), as the saturating adds here do.
+fn texelErrors(comptime signed: bool, t: *const [3]Lanes, p: [3]Lanes) LaneErrors {
+    var squares: [3]LaneErrors = undefined;
+    for (0..3) |c| {
+        const d = @abs(t[c] - p[c]);
+        squares[c] = d * d;
+    }
+    if (signed) return (squares[0] +| squares[1]) +| squares[2];
+    return squares[0] + squares[1] + squares[2];
 }
+
+/// The nearest-entry search over the lanes of one block. Like the C's
+/// scalar loop, each texel keeps the first entry with the smallest error,
+/// and an error of maxInt(u32) keeps entry 0.
+const Nearest = struct {
+    err: LaneErrors = @splat(maxInt(u32)),
+    entry: @Vector(16, u8) = @splat(0),
+
+    fn offer(self: *Nearest, e: LaneErrors, entry: usize) void {
+        const closer = e < self.err;
+        self.err = @select(u32, closer, e, self.err);
+        self.entry = @select(u8, closer, @as(@Vector(16, u8), @splat(@intCast(entry))), self.entry);
+    }
+
+    fn total(self: Nearest) u64 {
+        return @reduce(.Add, @as(@Vector(16, u64), self.err));
+    }
+};
 
 /// Clamps to N-bit two's complement and returns its low N bits.
 fn packSignedN(v_in: i32, bits: u32) u32 {
@@ -273,33 +301,39 @@ fn pal16(comptime signed: bool, lo: *const [3]Int(signed), hi: *const [3]Int(sig
 
 /// Picks each texel's nearest palette entry (the first on ties) and returns
 /// the total error.
-fn chooseSelectors(comptime signed: bool, target: *const Target(signed), lo: *const [3]Int(signed), hi: *const [3]Int(signed), sel: *[16]u8) u64 {
+fn chooseSelectors(
+    comptime signed: bool,
+    t: *const [3]Lanes,
+    lo: *const [3]Int(signed),
+    hi: *const [3]Int(signed),
+    sel: *[16]u8,
+) u64 {
     const pal = pal16(signed, lo, hi);
-    var err: u64 = 0;
-    for (target, sel) |t, *out| {
-        var best: u32 = 0;
-        var best_err: u32 = maxInt(u32);
-        for (pal, 0..) |p, s| {
-            const e = if (signed) err3Smag(t, p[0], p[1], p[2]) else err3Mag(t, p[0], p[1], p[2]);
-            if (e < best_err) {
-                best_err = e;
-                best = @intCast(s);
-            }
-        }
-        out.* = @intCast(best);
-        err += best_err;
+    var nearest: Nearest = .{};
+    for (pal, 0..) |p, s| {
+        var colour: [3]Lanes = undefined;
+        for (0..3) |c| colour[c] = @splat(@intCast(p[c]));
+        nearest.offer(texelErrors(signed, t, colour), s);
     }
-    return err;
+    sel.* = nearest.entry;
+    return nearest.total();
 }
 
 /// Least squares refit of a one-region block's endpoints to the current
 /// selectors (2x2 normal equations per channel in the quantized domain),
 /// kept while the error drops, for up to three rounds. Endpoints clamp to the
 /// 10-bit range whatever the mode's precision, as in the C.
-fn refine(comptime signed: bool, q: *const Target(signed), target: *const Target(signed), lo: *[3]Int(signed), hi: *[3]Int(signed), sel: *[16]u8) u64 {
+fn refine(
+    comptime signed: bool,
+    q: *const Target(signed),
+    t: *const [3]Lanes,
+    lo: *[3]Int(signed),
+    hi: *[3]Int(signed),
+    sel: *[16]u8,
+) u64 {
     const clamp_lo: i64 = if (signed) -511 else 0;
     const clamp_hi: i64 = if (signed) 511 else 1023;
-    var best = chooseSelectors(signed, target, lo, hi, sel);
+    var best = chooseSelectors(signed, t, lo, hi, sel);
     for (0..3) |_| {
         var nlo: [3]Int(signed) = undefined;
         var nhi: [3]Int(signed) = undefined;
@@ -331,7 +365,7 @@ fn refine(comptime signed: bool, q: *const Target(signed), target: *const Target
             nlo[c] = @intCast(l);
             nhi[c] = @intCast(h);
         }
-        const e = chooseSelectors(signed, target, &nlo, &nhi, &nsel);
+        const e = chooseSelectors(signed, t, &nlo, &nhi, &nsel);
         if (e < best) {
             best = e;
             lo.* = nlo;
@@ -348,6 +382,8 @@ fn OneRegion(comptime signed: bool) type {
     return struct {
         q: Target(signed),
         target: Target(signed),
+        /// `target` as lanes, for the selector search.
+        lanes: [3]Lanes,
         lo: [3]Int(signed),
         hi: [3]Int(signed),
         sel: [16]u8,
@@ -432,8 +468,9 @@ fn oneRegion(comptime signed: bool, pix: *const Pixels, q_bits: u32, luma_order:
     const luma_hi = r.q[max_i];
     var luma_sel: [16]u8 = undefined;
     var box_sel: [16]u8 = undefined;
-    const luma_err = chooseSelectors(signed, &r.target, &luma_lo, &luma_hi, &luma_sel);
-    const box_err = chooseSelectors(signed, &r.target, &lo, &hi, &box_sel);
+    r.lanes = channelLanes(signed, &r.target);
+    const luma_err = chooseSelectors(signed, &r.lanes, &luma_lo, &luma_hi, &luma_sel);
+    const box_err = chooseSelectors(signed, &r.lanes, &lo, &hi, &box_sel);
     if (luma_err < box_err) {
         lo = luma_lo;
         hi = luma_hi;
@@ -441,7 +478,7 @@ fn oneRegion(comptime signed: bool, pix: *const Pixels, q_bits: u32, luma_order:
     } else {
         r.sel = box_sel;
     }
-    r.err = refine(signed, &r.q, &r.target, &lo, &hi, &r.sel);
+    r.err = refine(signed, &r.q, &r.lanes, &lo, &hi, &r.sel);
     if (r.sel[0] & 8 != 0) {
         std.mem.swap([3]T, &lo, &hi);
         for (&r.sel) |*s| s.* = 15 - s.*;
@@ -483,6 +520,13 @@ pub fn partition(p: u32) *const [16]u8 {
     return &part2[p];
 }
 
+/// The texels of each partition's region 1.
+const part2_second = masks: {
+    var masks: [32]@Vector(16, bool) = undefined;
+    for (&masks, &part2) |*m, *p| m.* = @as(@Vector(16, u8), p.*) != @as(@Vector(16, u8), @splat(0));
+    break :masks masks;
+};
+
 /// How a palette entry's magnitude is computed from interpolated endpoints:
 /// as 10-bit values (mode 0's selectors, which the C reuses for every
 /// delta mode whatever its precision) or as 6-bit values (mode 9's).
@@ -511,7 +555,14 @@ fn TwoRegion(comptime signed: bool) type {
     };
 }
 
-fn twoRegionSelectors(comptime cfg: TwoRegionConfig, target: *const Target(cfg.signed), part: *const [16]u8, ep: *const [4][3]Int(cfg.signed), sel: *[16]u8) u64 {
+/// `second` marks the texels of the partition's region 1.
+fn twoRegionSelectors(
+    comptime cfg: TwoRegionConfig,
+    t: *const [3]Lanes,
+    second: @Vector(16, bool),
+    ep: *const [4][3]Int(cfg.signed),
+    sel: *[16]u8,
+) u64 {
     const T = Int(cfg.signed);
     var pal: [2][8][3]T = undefined;
     for (0..2) |r| for (0..8) |s| for (0..3) |c| {
@@ -530,23 +581,17 @@ fn twoRegionSelectors(comptime cfg: TwoRegionConfig, target: *const Target(cfg.s
             };
         }
     };
-    var err: u64 = 0;
-    for (0..16) |i| {
-        const reg = part[i];
-        var best: u32 = 0;
-        var berr: u32 = maxInt(u32);
-        for (0..8) |s| {
-            const p = pal[reg][s];
-            const e = if (cfg.signed) err3Smag(target[i], p[0], p[1], p[2]) else err3Mag(target[i], p[0], p[1], p[2]);
-            if (e < berr) {
-                berr = e;
-                best = @intCast(s);
-            }
+    var nearest: Nearest = .{};
+    for (0..8) |s| {
+        var colour: [3]Lanes = undefined;
+        for (0..3) |c| {
+            const first: Lanes = @splat(@intCast(pal[0][s][c]));
+            colour[c] = @select(i32, second, @as(Lanes, @splat(@intCast(pal[1][s][c]))), first);
         }
-        sel[i] = @intCast(best);
-        err += berr;
+        nearest.offer(texelErrors(cfg.signed, t, colour), s);
     }
-    return err;
+    sel.* = nearest.entry;
+    return nearest.total();
 }
 
 /// Whether every endpoint's delta from endpoint 0 fits its channel's width.
@@ -583,22 +628,27 @@ fn twoRegion(comptime cfg: TwoRegionConfig, pix: *const Pixels) ?TwoRegion(cfg.s
         }
     };
 
+    const ql = channelLanes(signed, &q);
+    const tl = channelLanes(signed, &target);
+
     const Box = struct {
         lo: [2][3]T,
         hi: [2][3]T,
-        have: [2]bool,
 
-        // The C starts these at the mode's range limits; with q inside that
-        // range, the type's extremes give the same boxes.
-        fn of(qq: *const Target(signed), part: *const [16]u8) @This() {
-            var box: @This() = .{ .lo = @splat(@splat(maxInt(T))), .hi = @splat(@splat(std.math.minInt(T))), .have = .{ false, false } };
-            for (0..16) |i| {
-                const reg = part[i];
-                for (0..3) |c| {
-                    if (qq[i][c] < box.lo[reg][c]) box.lo[reg][c] = qq[i][c];
-                    if (qq[i][c] > box.hi[reg][c]) box.hi[reg][c] = qq[i][c];
-                }
-                box.have[reg] = true;
+        /// Each region's smallest and largest values per channel, or null
+        /// when a region is empty, which the C skips. The C starts the
+        /// extremes at the mode's range limits; with q inside that range,
+        /// it ends with the same boxes.
+        fn of(qq: *const [3]Lanes, second: @Vector(16, bool)) ?@This() {
+            if (!@reduce(.Or, second) or @reduce(.And, second)) return null;
+            const top: Lanes = @splat(maxInt(i32));
+            const bottom: Lanes = @splat(std.math.minInt(i32));
+            var box: @This() = undefined;
+            for (0..3) |c| {
+                box.lo[0][c] = @intCast(@reduce(.Min, @select(i32, second, top, qq[c])));
+                box.hi[0][c] = @intCast(@reduce(.Max, @select(i32, second, bottom, qq[c])));
+                box.lo[1][c] = @intCast(@reduce(.Min, @select(i32, second, qq[c], top)));
+                box.hi[1][c] = @intCast(@reduce(.Max, @select(i32, second, qq[c], bottom)));
             }
             return box;
         }
@@ -609,8 +659,7 @@ fn twoRegion(comptime cfg: TwoRegionConfig, pix: *const Pixels) ?TwoRegion(cfg.s
     var ncand: u32 = 0;
     for (0..32) |p_usize| {
         const p: u32 = @intCast(p_usize);
-        const box = Box.of(&q, &part2[p]);
-        if (!box.have[0] or !box.have[1]) continue;
+        const box = Box.of(&ql, part2_second[p]) orelse continue;
         var score: u64 = 0;
         for (0..3) |c| {
             const e0: u64 = @intCast(@as(i64, box.hi[0][c]) - box.lo[0][c]);
@@ -637,13 +686,13 @@ fn twoRegion(comptime cfg: TwoRegionConfig, pix: *const Pixels) ?TwoRegion(cfg.s
     best.err = err_none;
     var found = false;
     for (cand[0..ncand]) |p| {
-        const box = Box.of(&q, &part2[p]);
+        const box = Box.of(&ql, part2_second[p]).?;
         if (cfg.delta_bits) |bits| {
             if (!deltasFit(T, bits, box.lo[0], .{ box.hi[0], box.lo[1], box.hi[1] })) continue;
         }
         const ep = [4][3]T{ box.lo[0], box.hi[0], box.lo[1], box.hi[1] };
         var sel: [16]u8 = undefined;
-        const err = twoRegionSelectors(cfg, &target, &part2[p], &ep, &sel);
+        const err = twoRegionSelectors(cfg, &tl, part2_second[p], &ep, &sel);
         if (err < best.err) {
             best.err = err;
             best.partition = p;
@@ -689,7 +738,7 @@ fn twoRegion(comptime cfg: TwoRegionConfig, pix: *const Pixels) ?TwoRegion(cfg.s
         if (cfg.delta_bits) |bits| {
             if (!deltasFit(T, bits, nep[0], .{ nep[1], nep[2], nep[3] })) break;
         }
-        const e = twoRegionSelectors(cfg, &target, part, &nep, &nsel);
+        const e = twoRegionSelectors(cfg, &tl, part2_second[best.partition], &nep, &nsel);
         if (e < best.err) {
             best.err = e;
             best.ep = nep;
@@ -1148,7 +1197,7 @@ fn packMode10(comptime signed: bool, r: *const OneRegion(signed), out: *Block) v
 fn mode10Uf16(pix: *const Pixels, out: *Block) u64 {
     var r = oneRegion(false, pix, 10, .unsigned);
     packMode10(false, &r, out);
-    return chooseSelectors(false, &r.target, &r.lo, &r.hi, &r.sel);
+    return chooseSelectors(false, &r.lanes, &r.lo, &r.hi, &r.sel);
 }
 
 /// Mode 12: a 12-bit base (high two bits stored reversed) and 8-bit deltas.
@@ -1167,7 +1216,7 @@ fn mode12Uf16(pix: *const Pixels, out: *Block) u64 {
         w.put(((hi2 & 1) << 1) | ((hi2 >> 1) & 1), 2);
     }
     w.indices(&r.sel, 0, 4);
-    return chooseSelectors(false, &r.target, &r.lo, &r.hi, &r.sel);
+    return chooseSelectors(false, &r.lanes, &r.lo, &r.hi, &r.sel);
 }
 
 /// Mode 13: a 16-bit base (high six bits stored reversed) and 4-bit deltas.
@@ -1186,7 +1235,7 @@ fn mode13Uf16(pix: *const Pixels, out: *Block) u64 {
         w.put(@bitReverse(@as(u6, @intCast(hi6))), 6);
     }
     w.indices(&r.sel, 0, 4);
-    return chooseSelectors(false, &r.target, &r.lo, &r.hi, &r.sel);
+    return chooseSelectors(false, &r.lanes, &r.lo, &r.hi, &r.sel);
 }
 
 /// Mode 12, signed. Unlike the unsigned packer, the C does not reverse the
@@ -1207,7 +1256,7 @@ fn mode12Sf16(pix: *const Pixels, out: *Block) u64 {
         w.put((packed_base[c] >> 10) & 3, 2);
     }
     w.indices(&r.sel, 0, 4);
-    return chooseSelectors(true, &r.target, &r.lo, &r.hi, &r.sel);
+    return chooseSelectors(true, &r.lanes, &r.lo, &r.hi, &r.sel);
 }
 
 /// Mode 13, signed, again without the high-bit reversal.
@@ -1227,7 +1276,7 @@ fn mode13Sf16(pix: *const Pixels, out: *Block) u64 {
         w.put((packed_base[c] >> 10) & 63, 6);
     }
     w.indices(&r.sel, 0, 4);
-    return chooseSelectors(true, &r.target, &r.lo, &r.hi, &r.sel);
+    return chooseSelectors(true, &r.lanes, &r.lo, &r.hi, &r.sel);
 }
 
 // --- Block encoders -------------------------------------------------------------
