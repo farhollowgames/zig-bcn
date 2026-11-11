@@ -39,13 +39,10 @@ reviewed by a person.
 ## Install
 
 ```sh
-zig fetch --save git+https://github.com/farhollowgames/zig-bcn#v0.2.0
+zig fetch --save git+https://github.com/farhollowgames/zig-bcn#v0.3.0
 ```
 
-`v0.2.0` is the latest tag. The changes since it (the benchmark, the
-`-Dfuzz-seed` option, the decoders rewritten in vector lanes, and the BC5
-SNORM and BC7 float decoders) are not tagged yet; a release tag with them is
-coming.
+`v0.3.0` is the latest release.
 
 In `build.zig`:
 
@@ -105,11 +102,12 @@ The reasons are in [`doc/parity.md`](doc/parity.md) and
 
 ## Not included
 
-The parts of the originals that are left out, each with its reason, are listed in [`STATUS.md`](STATUS.md#left-out-for-the-author-to-approve).
+The parts of the originals that are left out, each with its reason, are listed in
+[`STATUS.md`](STATUS.md#left-out-approved).
 
 ## Testing and benchmarks
 
-`zig build test` runs 60 tests: 14 unit tests and 46 tests that build the
+`zig build test` runs 61 tests: 15 unit tests and 46 tests that build the
 originals from `reference/`. Most of the 46 run the original and the port
 on the same inputs and compare every output byte, error measure and flag;
 `bc6h.Quality.high`, which has no original, is checked against what its
@@ -121,13 +119,14 @@ Time taken by zig-bcn divided by time taken by the original, one thread
 | feature | zig-bcn / original |
 | --- | ---: |
 | BC1 encode, normal | 0.87 |
-| BC7 encode, basic | 1.26 |
-| BC6H encode, unsigned | 0.64 |
-| BC7 decode | 0.46 |
+| BC7 encode, basic | 1.30 |
+| BC6H encode, unsigned | 0.63 |
+| BC7 decode | 0.45 |
 | BC6H decode, unsigned | 0.40 |
 
-AMD Ryzen 9 9950X3D, Linux 7.3, Zig 0.17.0, measured while other builds
-ran on the machine.
+AMD Ryzen 9 9950X3D, Linux 7.3, Zig 0.17.0, at commit `3ee9b14`, with a
+load average of 2.3 to 3.0 on 32 hardware threads; the median of three
+runs.
 
 - [`doc/TESTING.md`](doc/TESTING.md): how the tests compare the port with
   the originals, and what this repository's tests cover.

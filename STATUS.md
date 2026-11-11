@@ -9,8 +9,9 @@ originals, with its state:
   and every output byte and returned value matches;
 - **benchmarked**: oracle-tested, and timed against the original by
   `zig build bench` (see `doc/BENCHMARKS.md`);
-- **reviewed**: benchmarked, through the performance pass, the skeptic and
-  the fixes, and released.
+- **reviewed**: through the performance pass, the skeptic and the fixes,
+  and released. Every row not left out is reviewed; the state after "reviewed"
+  is the furthest its tests and the benchmark go.
 
 The pinned originals are vendored in `reference/` (see
 `reference/README.md`): stb_dxt v1.12 (`2c980bb`), basis_universal `v2_50`
@@ -21,30 +22,30 @@ says which test compares each item and on what inputs.
 
 | original | zig-bcn | state |
 | --- | --- | --- |
-| `stb_compress_dxt_block(dest, src, alpha = 0, mode)` | `bc1.encodeBlock`, `bc1.encodeImage` | benchmarked |
-| `stb_compress_dxt_block(dest, src, alpha = 1, mode)` | `bc3.encodeBlock`, `bc3.encodeImage` | benchmarked |
-| `stb_compress_bc4_block` | `bc4.encodeBlock`, `bc4.encodeImage` | benchmarked |
-| `stb_compress_bc5_block` | `bc5.encodeBlock`, `bc5.encodeImage` | benchmarked |
-| mode `STB_DXT_NORMAL`, `STB_DXT_HIGHQUAL` | `Settings.quality` `.normal`, `.high` | benchmarked |
-| mode `STB_DXT_DITHER` (deprecated: "does nothing") | no option | oracle-tested: modes 1 and 3 give the bytes of 0 and 2 |
-| `STB_DXT_USE_ROUNDING_BIAS` | `Settings.rounding = .biased` | benchmarked |
-| `STB_DXT_GENERATE_TABLES` | `generateOMatch` | oracle-tested: regenerates both tables |
+| `stb_compress_dxt_block(dest, src, alpha = 0, mode)` | `bc1.encodeBlock`, `bc1.encodeImage` | reviewed, benchmarked |
+| `stb_compress_dxt_block(dest, src, alpha = 1, mode)` | `bc3.encodeBlock`, `bc3.encodeImage` | reviewed, benchmarked |
+| `stb_compress_bc4_block` | `bc4.encodeBlock`, `bc4.encodeImage` | reviewed, benchmarked |
+| `stb_compress_bc5_block` | `bc5.encodeBlock`, `bc5.encodeImage` | reviewed, benchmarked |
+| mode `STB_DXT_NORMAL`, `STB_DXT_HIGHQUAL` | `Settings.quality` `.normal`, `.high` | reviewed, benchmarked |
+| mode `STB_DXT_DITHER` (deprecated: "does nothing") | no option | reviewed, oracle-tested: modes 1 and 3 give the bytes of 0 and 2 |
+| `STB_DXT_USE_ROUNDING_BIAS` | `Settings.rounding = .biased` | reviewed, benchmarked |
+| `STB_DXT_GENERATE_TABLES` | `generateOMatch` | reviewed, oracle-tested: regenerates both tables |
 | `STB_DXT_STATIC`, `STBD_FABS`, `STB_DXT_IMPLEMENTATION` | left out: C linkage and libm configuration | |
 
 ## basisu_bc7e_scalar (BC7)
 
 | original | zig-bcn | state |
 | --- | --- | --- |
-| `bc7e_compress_block_init` | none needed: tables built at compile time | oracle-tested through the encoder: the differential tests reach every entry it reads; a unit test checks the tables against a translation of the original's build |
-| `bc7e_compress_block_params_init` (base settings) | `Params.initDefaults` | oracle-tested |
-| `..._init_ultrafast` to `..._init_slowest` (7 levels) | `Params.init(level, perceptual)` | benchmarked (all 7, perceptual; `basic` linear too) |
-| `bc7e_compress_block_params` and every field | `Params` (`extern struct`, same layout) | oracle-tested: every field on more than one value |
-| `bc7e_compress_blocks(n, blocks, pixels, params, used_lut)` | `bc7.encodeBlock`, `bc7.encodeImage` | benchmarked |
-| `pUsed_lut` | `bc7.encodeBlockReportingLut` | oracle-tested |
-| `bc7e_compress_block_single_mode` | `bc7.encodeBlockSingleMode` | oracle-tested: blocks and errors, every mode, partition, rotation and index selector |
+| `bc7e_compress_block_init` | none needed: tables built at compile time | reviewed, oracle-tested through the encoder: the differential tests reach every entry it reads; a unit test checks the tables against a translation of the original's build |
+| `bc7e_compress_block_params_init` (base settings) | `Params.initDefaults` | reviewed, oracle-tested |
+| `..._init_ultrafast` to `..._init_slowest` (7 levels) | `Params.init(level, perceptual)` | reviewed, benchmarked (all 7, perceptual; `basic` linear too) |
+| `bc7e_compress_block_params` and every field | `Params` (`extern struct`, same layout) | reviewed, oracle-tested: every field on more than one value |
+| `bc7e_compress_blocks(n, blocks, pixels, params, used_lut)` | `bc7.encodeBlock`, `bc7.encodeImage` | reviewed, benchmarked |
+| `pUsed_lut` | `bc7.encodeBlockReportingLut` | reviewed, oracle-tested |
+| `bc7e_compress_block_single_mode` | `bc7.encodeBlockSingleMode` | reviewed, oracle-tested: blocks and errors, every mode, partition, rotation and index selector |
 | `BC7E_NON_DETERMINISTIC` | left out: hard-coded to 0 in the original; the port is that value | |
 | `HERE()` debug macro | left out: unused in the original | |
-| `BC7E_*` constants | same constants | ported |
+| `BC7E_*` constants | same constants | reviewed, ported |
 
 ## texcomp (BC6H, and the decoders zig-bcn is checked against)
 
@@ -55,37 +56,37 @@ own decoders.
 
 | original | zig-bcn | state |
 | --- | --- | --- |
-| `tc_bc6h_compress_rgb32f` | `bc6h.encodeImage` | benchmarked (as its block encoder) |
-| block encoders `tc_encode_bc6h_block_uf16`, `_sf16` | `bc6h.encodeBlock` | benchmarked |
-| every mode encoder, both formats | `bc6h.texcomp.encodeMode` | oracle-tested: blocks and error estimates |
-| `tc_bc6h_options.signed_float`, `opt = NULL` | `Format` | benchmarked (both formats) |
-| `tc_bc6h_options_init` | none needed: `Format` is an argument | oracle-tested |
-| `tc_bc6h_compressed_size` | `encodedLen(16, w, h)` | oracle-tested, 1x1 to 69x69 |
-| `tc_float_to_half_bits` | `bc6h.floatToHalfBits` | oracle-tested on all 2^32 floats |
-| `tc_bc6h_decompress_rgb16f` | `bc6h.decodeImage` | benchmarked |
-| `tc_bc6h_decompress_rgbaf` | `bc6h.decodeImageF32` | oracle-tested |
-| `tc_bc6h_decode_block_half` | `bc6h.decodeBlock` | benchmarked |
-| SSE4.1, AVX2 and NEON selector kernels | the scalar search, run on vectors | oracle-tested: the original under every x86 kernel |
+| `tc_bc6h_compress_rgb32f` | `bc6h.encodeImage` | reviewed, benchmarked (as its block encoder) |
+| block encoders `tc_encode_bc6h_block_uf16`, `_sf16` | `bc6h.encodeBlock` | reviewed, benchmarked |
+| every mode encoder, both formats | `bc6h.texcomp.encodeMode` | reviewed, oracle-tested: blocks and error estimates |
+| `tc_bc6h_options.signed_float`, `opt = NULL` | `Format` | reviewed, benchmarked (both formats) |
+| `tc_bc6h_options_init` | none needed: `Format` is an argument | reviewed, oracle-tested |
+| `tc_bc6h_compressed_size` | `encodedLen(16, w, h)` | reviewed, oracle-tested, 1x1 to 69x69 |
+| `tc_float_to_half_bits` | `bc6h.floatToHalfBits` | reviewed, oracle-tested on all 2^32 floats |
+| `tc_bc6h_decompress_rgb16f` | `bc6h.decodeImage` | reviewed, benchmarked |
+| `tc_bc6h_decompress_rgbaf` | `bc6h.decodeImageF32` | reviewed, oracle-tested |
+| `tc_bc6h_decode_block_half` | `bc6h.decodeBlock` | reviewed, benchmarked |
+| SSE4.1, AVX2 and NEON selector kernels | the scalar search, run on vectors | reviewed, oracle-tested: the original under every x86 kernel |
 | `tc_backend_*` (kernel dispatch) | left out: zig-bcn has one search | |
 | `tc_bc6h_options.reserved` | left out: texcomp never reads it | |
 | `tc_dds_bc6h_size`, `tc_dds_write_bc6h_memory` | left out: DDS containers are outside a codec | |
-| `tc_bc1_decompress_rgba8`, `tc_bc3_decompress_rgba8` | `bc1.decodeImage`, `bc3.decodeImage` (zig-bcn's own) | benchmarked |
-| `tc_decode_bc4_block` | `bc4.decodeBlock` (zig-bcn's own) | benchmarked |
-| `tc_bc5_decompress_rgba8`, unsigned | `bc5.decodeImage` (zig-bcn's own; writes R and G only) | benchmarked |
-| `tc_decode_bc4_block_snorm` | `bc4.decodeBlockSnorm`, and `bc5.decodeBlockSnorm` for both halves (zig-bcn's own) | oracle-tested: every endpoint pair, -128 included, and 50,000 random and edge blocks; timed through `bc5.decodeImageSnorm` |
-| `tc_bc5_decompress_rgba8`, signed (`snorm = 1`) | `bc5.decodeImageSnorm` (zig-bcn's own; writes R and G only) | benchmarked |
-| `tc_bc7_decompress_rgba8` | `bc7.decodeImage` (zig-bcn's own) | benchmarked |
-| `tc_bc7_decompress_rgbaf` | `bc7.decodeImageF32`, `bc7.decodeBlockF32` (zig-bcn's own; RGBA, or RGB with 3 channels) | benchmarked |
+| `tc_bc1_decompress_rgba8`, `tc_bc3_decompress_rgba8` | `bc1.decodeImage`, `bc3.decodeImage` (zig-bcn's own) | reviewed, benchmarked |
+| `tc_decode_bc4_block` | `bc4.decodeBlock` (zig-bcn's own) | reviewed, benchmarked |
+| `tc_bc5_decompress_rgba8`, unsigned | `bc5.decodeImage` (zig-bcn's own; writes R and G only) | reviewed, benchmarked |
+| `tc_decode_bc4_block_snorm` | `bc4.decodeBlockSnorm`, and `bc5.decodeBlockSnorm` for both halves (zig-bcn's own) | reviewed, oracle-tested: every endpoint pair, -128 included, and 50,000 random and edge blocks; timed through `bc5.decodeImageSnorm` |
+| `tc_bc5_decompress_rgba8`, signed (`snorm = 1`) | `bc5.decodeImageSnorm` (zig-bcn's own; writes R and G only) | reviewed, benchmarked |
+| `tc_bc7_decompress_rgba8` | `bc7.decodeImage` (zig-bcn's own) | reviewed, benchmarked |
+| `tc_bc7_decompress_rgbaf` | `bc7.decodeImageF32`, `bc7.decodeBlockF32` (zig-bcn's own; RGBA, or RGB with 3 channels) | reviewed, benchmarked |
 | texcomp's BC1, BC3, BC5 and BC7 encoders, ETC2, EAC, ASTC, the `uni` format and transcoders, and the other DDS writers | left out: other encoders or formats than the ones chosen | |
 
 ## zig-bcn's own
 
 | feature | state |
 | --- | --- |
-| `bc6h.Quality.high` encoder (`src/bc6h_high.zig`) | benchmarked; no original, so its tests check what it decodes to (`test/bc6h_high_test.zig`) |
-| `bcn.Encoding`: one call, row bands, threads | tested: the format functions' bytes, in bands, on 1, 2 and 8 threads |
+| `bc6h.Quality.high` encoder (`src/bc6h_high.zig`) | reviewed, benchmarked; no original, so its tests check what it decodes to (`test/bc6h_high_test.zig`) |
+| `bcn.Encoding`: one call, row bands, threads | reviewed, tested: the format functions' bytes, in bands, on 1, 2 and 8 threads |
 
-## Left out, for the author to approve
+## Left out (approved)
 
 - Every row above marked "left out", with its reason.
 - Argument errors: texcomp returns `TC_ERROR_INVALID_ARGUMENT` for null

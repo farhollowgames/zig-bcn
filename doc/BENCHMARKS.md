@@ -23,9 +23,11 @@ search.
   removed, and the two sides' outputs are compared.
 - **Reported**: the median of 11 samples in megapixels a second, the best
   median of three rounds for each side; range is (slowest - fastest) /
-  median. The time
-  ratio is the original's throughput divided by zig-bcn's: below 1, zig-bcn
-  takes less time.
+  median. The time ratio is the original's throughput divided by zig-bcn's:
+  below 1, zig-bcn takes less time.
+- **Three runs**: the command below ran three times. Each row is from the
+  run with the median time ratio, and the last column is the range of the
+  three runs' time ratios, (largest - smallest) / median.
 
 ```sh
 zig build bench -- --rounds 3
@@ -34,59 +36,54 @@ zig build bench -- --filter decode --rounds 3   # one group of rows
 
 ## Machine
 
-AMD Ryzen 9 9950X3D, Linux 7.3, Zig 0.17.0 (`x86_64` `znver5`).
-
-**The machine was busy.** The numbers were taken while other builds ran,
-so absolute speeds move by up to a fifth between runs; the ratios, from
-alternating samples, move less. The `bc5 decode snorm` and `bc7 decode f32`
-rows were taken later, on the same machine under load: each is the run
-with the median ratio of three runs of
-`zig build bench -- --filter decode --rounds 3`.
+AMD Ryzen 9 9950X3D, Linux 7.3, Zig 0.17.0 (`x86_64` `znver5`), at
+commit `3ee9b14`, on 11 November 2026. The one-minute load average was
+2.3 to 3.0 during the runs, on 32 hardware threads.
 
 ## Results
 
-| feature | zig-bcn Mpix/s | range | original Mpix/s | range | throughput, zig-bcn / original | time, zig-bcn / original |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| bc1 encode normal | 166.07 | 5.9% | 144.53 | 1.5% | 1.15 | 0.87 |
-| bc1 encode high | 147.65 | 18.6% | 127.76 | 2.8% | 1.16 | 0.87 |
-| bc1 encode normal biased | 167.19 | 1.3% | 138.29 | 0.8% | 1.21 | 0.83 |
-| bc3 encode normal | 121.79 | 4.8% | 111.69 | 2.6% | 1.09 | 0.92 |
-| bc3 encode high | 110.34 | 6.5% | 99.65 | 3.2% | 1.11 | 0.90 |
-| bc4 encode | 487.49 | 3.3% | 481.56 | 6.9% | 1.01 | 0.99 |
-| bc5 encode | 232.63 | 1.4% | 242.49 | 3.8% | 0.96 | 1.04 |
-| bc7 encode ultrafast | 8.39 | 0.9% | 10.41 | 1.3% | 0.81 | 1.24 |
-| bc7 encode veryfast | 2.56 | 1.0% | 3.15 | 2.0% | 0.81 | 1.23 |
-| bc7 encode fast | 2.57 | 4.4% | 3.17 | 3.0% | 0.81 | 1.23 |
-| bc7 encode basic | 1.67 | 4.0% | 2.11 | 2.8% | 0.79 | 1.26 |
-| bc7 encode basic linear | 0.97 | 1.1% | 1.15 | 0.7% | 0.85 | 1.19 |
-| bc7 encode slow | 1.28 | 4.1% | 1.58 | 5.6% | 0.81 | 1.23 |
-| bc7 encode veryslow | 0.35 | 3.2% | 0.42 | 1.6% | 0.82 | 1.20 |
-| bc7 encode slowest | 0.27 | 0.7% | 0.32 | 1.2% | 0.84 | 1.19 |
-| bc6h encode unsigned | 4.92 | 0.6% | 3.16 | 0.8% | 1.56 | 0.64 |
-| bc6h encode signed | 3.38 | 2.1% | 2.90 | 2.9% | 1.17 | 0.86 |
-| bc6h encode unsigned, texcomp simd | 4.86 | 1.4% | 3.08 | 2.6% | 1.58 | 0.63 |
-| bc6h encode signed, texcomp simd | 3.26 | 3.6% | 2.69 | 3.2% | 1.21 | 0.83 |
-| bc6h encode high unsigned | 0.66 | 0.3% | no original | | | |
-| bc6h encode high signed | 0.61 | 0.6% | no original | | | |
-| bc1 decode | 1825.88 | 1.1% | 1319.43 | 2.1% | 1.38 | 0.72 |
-| bc3 decode | 1354.28 | 1.5% | 794.29 | 1.7% | 1.71 | 0.59 |
-| bc4 decode | 6710.07 | 1.9% | 2602.34 | 2.1% | 2.58 | 0.39 |
-| bc5 decode | 1245.02 | 6.2% | 972.02 | 2.8% | 1.28 | 0.78 |
-| bc5 decode snorm | 821.96 | 1.0% | 600.58 | 0.9% | 1.37 | 0.73 |
-| bc7 decode | 525.35 | 7.3% | 240.33 | 1.9% | 2.19 | 0.46 |
-| bc7 decode f32 | 634.27 | 3.1% | 237.17 | 1.8% | 2.67 | 0.37 |
-| bc6h decode unsigned | 740.69 | 3.7% | 297.71 | 0.9% | 2.49 | 0.40 |
-| bc6h decode signed | 643.87 | 4.6% | 219.48 | 5.5% | 2.93 | 0.34 |
+| feature | zig-bcn Mpix/s | range | original Mpix/s | range | throughput, zig-bcn / original | time, zig-bcn / original | time ratio, range of 3 runs |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| bc1 encode normal | 167.63 | 4.1% | 146.16 | 1.1% | 1.15 | 0.87 | 1.0% |
+| bc1 encode high | 148.37 | 2.5% | 126.99 | 1.9% | 1.17 | 0.86 | 0.9% |
+| bc1 encode normal biased | 166.78 | 3.0% | 138.26 | 1.6% | 1.21 | 0.83 | 1.2% |
+| bc3 encode normal | 121.77 | 3.3% | 110.62 | 1.4% | 1.10 | 0.91 | 0.6% |
+| bc3 encode high | 112.42 | 3.5% | 99.68 | 1.5% | 1.13 | 0.89 | 1.1% |
+| bc4 encode | 491.77 | 1.0% | 490.04 | 0.9% | 1.00 | 1.00 | 0.1% |
+| bc5 encode | 237.37 | 0.8% | 243.28 | 2.8% | 0.98 | 1.02 | 2.9% |
+| bc7 encode ultrafast | 8.45 | 0.7% | 10.63 | 1.0% | 0.79 | 1.26 | 1.2% |
+| bc7 encode veryfast | 2.50 | 1.2% | 3.22 | 0.5% | 0.78 | 1.29 | 5.2% |
+| bc7 encode fast | 2.50 | 1.1% | 3.22 | 0.7% | 0.78 | 1.29 | 5.1% |
+| bc7 encode basic | 1.65 | 0.4% | 2.14 | 0.5% | 0.77 | 1.30 | 3.5% |
+| bc7 encode basic linear | 0.98 | 0.8% | 1.16 | 0.5% | 0.84 | 1.18 | 1.9% |
+| bc7 encode slow | 1.30 | 0.5% | 1.62 | 0.5% | 0.80 | 1.25 | 3.2% |
+| bc7 encode veryslow | 0.35 | 0.8% | 0.42 | 0.5% | 0.83 | 1.20 | 2.9% |
+| bc7 encode slowest | 0.27 | 0.5% | 0.32 | 0.5% | 0.84 | 1.19 | 0.0% |
+| bc6h encode unsigned | 5.01 | 0.4% | 3.16 | 0.5% | 1.59 | 0.63 | 0.3% |
+| bc6h encode signed | 3.39 | 0.6% | 2.92 | 0.2% | 1.16 | 0.86 | 4.1% |
+| bc6h encode unsigned, texcomp simd | 5.00 | 0.3% | 3.13 | 0.3% | 1.60 | 0.63 | 1.1% |
+| bc6h encode signed, texcomp simd | 3.41 | 0.7% | 2.80 | 0.5% | 1.22 | 0.82 | 1.4% |
+| bc6h encode high unsigned | 0.69 | 0.4% | no original | | | | |
+| bc6h encode high signed | 0.65 | 2.6% | no original | | | | |
+| bc1 decode | 1953.87 | 0.5% | 1418.34 | 1.6% | 1.38 | 0.73 | 0.8% |
+| bc3 decode | 1439.16 | 0.6% | 842.27 | 3.0% | 1.71 | 0.59 | 0.5% |
+| bc4 decode | 7430.58 | 0.6% | 2736.27 | 0.6% | 2.72 | 0.37 | 0.4% |
+| bc5 decode | 1283.27 | 0.4% | 1017.45 | 0.7% | 1.26 | 0.79 | 1.6% |
+| bc5 decode snorm | 839.96 | 0.4% | 608.22 | 0.4% | 1.38 | 0.72 | 1.0% |
+| bc7 decode | 551.94 | 0.5% | 249.38 | 0.5% | 2.21 | 0.45 | 1.5% |
+| bc7 decode f32 | 638.40 | 0.5% | 241.11 | 0.4% | 2.65 | 0.38 | 1.5% |
+| bc6h decode unsigned | 784.79 | 0.3% | 311.51 | 0.3% | 2.52 | 0.40 | 3.5% |
+| bc6h decode signed | 689.48 | 0.4% | 231.70 | 0.6% | 2.98 | 0.34 | 2.4% |
 
 ## Notes and known biases
 
 - **BC7 encoding is slower than bc7e,** at about four fifths of its speed
-  (time ratio 1.19 to 1.26). The time is spread over the translated search
+  (time ratio 1.18 to 1.30). The time is spread over the translated search
   rather than one loop: its perceptual palette search, run on vectors,
   keeps every byte but gains nothing measurable.
-- **BC5 encoding** measured 0.96 of stb_dxt's throughput (time ratio
-  1.04). No reason has been identified; the BC4 encoder it is built from
-  measured 1.01.
+- **BC5 encoding** measured 0.98 of stb_dxt's throughput (time ratio
+  1.02). No reason has been identified; the BC4 encoder it is built from
+  measured 1.00.
 - **BC6H** runs its selector search and partition boxes on vectors of the
   block's 16 texels, with the same integer arithmetic as texcomp's SIMD
   kernels. texcomp's own AVX2 kernels make no difference here: built for
@@ -98,9 +95,9 @@ with the median ratio of three runs of
   it allocates for each call, then converts them; zig-bcn converts each
   block's lanes. zig-bcn's SNORM decoder turns signed values into bytes
   with integer lanes, which give exactly texcomp's float steps.
-- **CPU time, not wall time.** On a busy machine this leaves out the time
-  other processes hold the core, which is why the busy runs are usable;
-  memory and cache contention from those processes still reach both sides.
+- **CPU time, not wall time.** This leaves out the time other processes
+  hold the core; memory and cache contention from them still reach both
+  sides.
 - **The exactness flags** cost the originals little: built with fused
   multiply-add and without `-fwrapv`, they write different bytes, and only
   BC1 gets measurably faster (about a tenth). The rows above use the exact

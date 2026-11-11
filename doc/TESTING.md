@@ -102,7 +102,7 @@ which are its own, against texcomp's decoders.
 
 ### Tests and counts
 
-`zig build test` runs 60 tests: 14 unit tests in `src/` and 46 tests in
+`zig build test` runs 61 tests: 15 unit tests in `src/` and 46 tests in
 `test/`, through `test/differential.zig`. Most of the tests in `test/` are
 oracle tests; the others check round trips within the format's error, the
 format-independent API against the format functions, and the properties of
