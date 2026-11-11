@@ -72,9 +72,10 @@ own decoders.
 | `tc_bc1_decompress_rgba8`, `tc_bc3_decompress_rgba8` | `bc1.decodeImage`, `bc3.decodeImage` (zig-bcn's own) | benchmarked |
 | `tc_decode_bc4_block` | `bc4.decodeBlock` (zig-bcn's own) | benchmarked |
 | `tc_bc5_decompress_rgba8`, unsigned | `bc5.decodeImage` (zig-bcn's own; writes R and G only) | benchmarked |
+| `tc_decode_bc4_block_snorm` | `bc4.decodeBlockSnorm`, and `bc5.decodeBlockSnorm` for both halves (zig-bcn's own) | oracle-tested: every endpoint pair, -128 included, and 50,000 random and edge blocks; timed through `bc5.decodeImageSnorm` |
+| `tc_bc5_decompress_rgba8`, signed (`snorm = 1`) | `bc5.decodeImageSnorm` (zig-bcn's own; writes R and G only) | benchmarked |
 | `tc_bc7_decompress_rgba8` | `bc7.decodeImage` (zig-bcn's own) | benchmarked |
-| `tc_bc5_decompress_rgba8`, signed (`snorm = 1`) | not started: no BC5 SNORM decoder | |
-| `tc_bc7_decompress_rgbaf` | not started: no BC7 float decoder | |
+| `tc_bc7_decompress_rgbaf` | `bc7.decodeImageF32`, `bc7.decodeBlockF32` (zig-bcn's own; RGBA, or RGB with 3 channels) | benchmarked |
 | texcomp's BC1, BC3, BC5 and BC7 encoders, ETC2, EAC, ASTC, the `uni` format and transcoders, and the other DDS writers | left out: other encoders or formats than the ones chosen | |
 
 ## zig-bcn's own
@@ -94,5 +95,9 @@ own decoders.
   ReleaseFast, not an error.
 - The originals are vendored in `reference/`, not fetched as a lazy
   dependency in `build.zig.zon`.
-- `tc_bc5_decompress_rgba8` with `snorm = 1` and `tc_bc7_decompress_rgbaf`
-  have no zig-bcn counterpart.
+- `tc_bc7_decompress_rgbaf` allocates a buffer for each call and returns
+  `TC_ERROR_OUT_OF_MEMORY` when that fails; `bc7.decodeImageF32` does not
+  allocate, so it has no such error.
+- BC5 SNORM decodes through `bc5`'s own functions only: `bcn.Encoding` has
+  no SNORM variant, since zig-bcn has no SNORM encoder (stb_dxt has none;
+  texcomp's is one of the encoders left out).

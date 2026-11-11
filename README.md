@@ -18,7 +18,8 @@ no libc or libc++, and never allocates: you pass the output buffer.
 | BC6H | HDR RGB half floats, unsigned or signed, 8 bpp | texcomp (TinyEXR), and zig-bcn's own high-quality search | `unsigned` or `signed`; quality `fast` (texcomp) or `high` |
 
 Every format also has a decoder, written for zig-bcn and checked byte for
-byte against texcomp's decoders.
+byte against texcomp's decoders. BC4 and BC5 also decode signed (SNORM)
+blocks, and BC7 also decodes to floats.
 
 This port was written by Claude (Anthropic's AI model) for Farhollow Games.
 How the code was verified can be found
@@ -98,13 +99,20 @@ Format specifics:
   `bc1.encodeImage` ignores alpha; `bc1.encodeBlock` behaves exactly as
   stb_dxt, which wants a constant alpha in the block.
 - **BC4 and BC5** encode channel 0, or channels 0 and 1, of an image with
-  any number of channels.
+  any number of channels. `bc4.decodeBlockSnorm` and `bc5.decodeBlockSnorm`
+  decode signed (BC4_SNORM, BC5_SNORM) blocks to `i8` from -127 to 127
+  (-128 decodes as -127, as both mean -1); `bc5.decodeImageSnorm` writes
+  them as bytes in the normal-map convention, where a byte u stands for
+  2u / 255 − 1, as texcomp does. zig-bcn has no SNORM encoder.
 - **BC7** takes `Params`, an `extern struct` with bc7e's exact layout:
   `Params.init(level, perceptual)` gives bc7e's presets, and any field can be
   changed after. `encodeBlockReportingLut` also returns bc7e's flag for
   blocks that used its single-colour tables, and `encodeBlockSingleMode`
   encodes in one chosen mode, partition, rotation and index selector,
-  returning the error measure too.
+  returning the error measure too. `decodeImageF32` and `decodeBlockF32`
+  decode to floats from 0 to 1 (each byte divided by 255), into RGBA, or
+  RGB with 3 channels; through `bcn.decodeImage`, pass a `.float32`
+  destination.
 - **BC6H** takes `f32` RGB (3 or more channels) and `Format.unsigned` or
   `.signed`. `encodeBlock` and `encodeImage` are texcomp's encoder;
   `encodeBlockQuality` and `encodeImageQuality` take `Quality.fast` (the
@@ -181,7 +189,10 @@ zig build bench -- --rounds 3
 AMD Ryzen 9 9950X3D, Linux 7.3, Zig 0.17.0 (`x86_64` `znver5`). The
 numbers were taken while other builds ran on the machine, so absolute
 speeds move by up to a fifth between runs; the ratios, from alternating
-samples, move less.
+samples, move less. The `bc5 decode snorm` and `bc7 decode f32` rows were
+taken later, on the same machine under load: each is the run with the
+median ratio of three runs of
+`zig build bench -- --filter decode --rounds 3`.
 
 | feature | zig-bcn Mpix/s | range | original Mpix/s | range | zig-bcn / original |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -210,7 +221,9 @@ samples, move less.
 | bc3 decode | 1354.28 | 1.5% | 794.29 | 1.7% | 1.71 |
 | bc4 decode | 6710.07 | 1.9% | 2602.34 | 2.1% | 2.58 |
 | bc5 decode | 1245.02 | 6.2% | 972.02 | 2.8% | 1.28 |
+| bc5 decode snorm | 821.96 | 1.0% | 600.58 | 0.9% | 1.37 |
 | bc7 decode | 525.35 | 7.3% | 240.33 | 1.9% | 2.19 |
+| bc7 decode f32 | 634.27 | 3.1% | 237.17 | 1.8% | 2.67 |
 | bc6h decode unsigned | 740.69 | 3.7% | 297.71 | 0.9% | 2.49 |
 | bc6h decode signed | 643.87 | 4.6% | 219.48 | 5.5% | 2.93 |
 
@@ -224,7 +237,10 @@ samples, move less.
   this CPU, its scalar search is vectorized by the compiler too.
 - **The decoders** decode a block's 16 pixels at once, in vector lanes.
   texcomp's BC5 decoder writes blue and alpha as well; zig-bcn's writes
-  red and green only.
+  red and green only. Its SNORM decoder turns signed values into bytes
+  with integer lanes, which give exactly texcomp's float steps. texcomp's
+  BC7 float decoder decodes the image to bytes in a buffer it allocates
+  for each call, then converts them; zig-bcn converts each block's lanes.
 - **The exactness flags** cost the originals little: built with fused
   multiply-add and without `-fwrapv`, they write different bytes, and only
   BC1 gets measurably faster (about a tenth).

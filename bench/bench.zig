@@ -76,6 +76,24 @@ extern fn tc_bc7_decompress_rgba8(
     out: [*]u8,
     out_size: usize,
 ) c_int;
+extern fn tc_bc7_decompress_rgbaf(
+    bc7: [*]const u8,
+    width: u32,
+    height: u32,
+    stride_bytes: usize,
+    out: [*]f32,
+    out_size: usize,
+) c_int;
+const TcBc5Options = extern struct { snorm: c_int };
+extern fn tc_bc5_compress_rg8(
+    rg: [*]const u8,
+    width: u32,
+    height: u32,
+    stride: usize,
+    opt: *const TcBc5Options,
+    out: [*]u8,
+    out_size: usize,
+) c_int;
 extern fn tc_bc6h_decompress_rgb16f(
     bc6h: [*]const u8,
     width: u32,
@@ -120,6 +138,8 @@ const Inputs = struct {
     bc3: []const u8,
     bc4: []const u8,
     bc5: []const u8,
+    /// texcomp's SNORM encoding of `red_green`; zig-bcn has no SNORM encoder.
+    bc5_snorm: []const u8,
     bc7: []const u8,
     bc6h_unsigned: []const u8,
     bc6h_signed: []const u8,
@@ -276,6 +296,26 @@ fn bc5DecodeTexcomp(_: *const Case, in: *const Inputs, out: []align(64) u8) void
     std.debug.assert(r == 0);
 }
 
+/// Writes red and green only, as `bc5DecodeZig`.
+fn bc5DecodeSnormZig(_: *const Case, in: *const Inputs, out: []align(64) u8) void {
+    bcn.bc5.decodeImageSnorm(in.bc5_snorm, ldrImage(out));
+}
+
+fn bc5DecodeSnormTexcomp(_: *const Case, in: *const Inputs, out: []align(64) u8) void {
+    const stride = grid_width * 4;
+    const snorm = 1;
+    const r = tc_bc5_decompress_rgba8(
+        in.bc5_snorm.ptr,
+        grid_width,
+        ldr_height,
+        snorm,
+        stride,
+        out.ptr,
+        out.len,
+    );
+    std.debug.assert(r == 0);
+}
+
 fn bc7DecodeZig(_: *const Case, in: *const Inputs, out: []align(64) u8) void {
     bcn.bc7.decodeImage(in.bc7, ldrImage(out));
 }
@@ -283,6 +323,26 @@ fn bc7DecodeZig(_: *const Case, in: *const Inputs, out: []align(64) u8) void {
 fn bc7DecodeTexcomp(_: *const Case, in: *const Inputs, out: []align(64) u8) void {
     const stride = grid_width * 4;
     const r = tc_bc7_decompress_rgba8(in.bc7.ptr, grid_width, ldr_height, stride, out.ptr, out.len);
+    std.debug.assert(r == 0);
+}
+
+fn bc7DecodeF32Zig(_: *const Case, in: *const Inputs, out: []align(64) u8) void {
+    const floats: []f32 = std.mem.bytesAsSlice(f32, out);
+    bcn.bc7.decodeImageF32(in.bc7, .init(floats, grid_width, ldr_height, 4));
+}
+
+/// texcomp decodes to bytes in a buffer it allocates, then converts them.
+fn bc7DecodeF32Texcomp(_: *const Case, in: *const Inputs, out: []align(64) u8) void {
+    const floats: []f32 = std.mem.bytesAsSlice(f32, out);
+    const stride_bytes = grid_width * 16;
+    const r = tc_bc7_decompress_rgbaf(
+        in.bc7.ptr,
+        grid_width,
+        ldr_height,
+        stride_bytes,
+        floats.ptr,
+        out.len,
+    );
     std.debug.assert(r == 0);
 }
 
@@ -399,7 +459,11 @@ const cases = [_]Case{
     ldrCase("bc3 decode", 64, bc3DecodeZig, bc3DecodeTexcomp, .{}),
     ldrCase("bc4 decode", 16, bc4DecodeZig, bc4DecodeTexcomp, .{}),
     ldrCase("bc5 decode", 64, bc5DecodeZig, bc5DecodeTexcomp, .{ .rgba_fill = true }),
+    ldrCase("bc5 decode snorm", 64, bc5DecodeSnormZig, bc5DecodeSnormTexcomp, .{
+        .rgba_fill = true,
+    }),
     ldrCase("bc7 decode", 64, bc7DecodeZig, bc7DecodeTexcomp, .{}),
+    ldrCase("bc7 decode f32", 256, bc7DecodeF32Zig, bc7DecodeF32Texcomp, .{}),
     hdrCase("bc6h decode unsigned", 96, bc6hDecodeZig, bc6hDecodeTexcomp, .{}),
     hdrCase("bc6h decode signed", 96, bc6hDecodeZig, bc6hDecodeTexcomp, signed_format),
 };
@@ -554,13 +618,18 @@ fn prepare(gpa: std.mem.Allocator) !Inputs {
     const bc3 = try gpa.alloc(u8, ldr_blocks * 16);
     const bc4 = try gpa.alloc(u8, ldr_blocks * 8);
     const bc5 = try gpa.alloc(u8, ldr_blocks * 16);
+    const bc5_snorm = try gpa.alloc(u8, ldr_blocks * 16);
     const bc7 = try gpa.alloc(u8, ldr_blocks * 16);
     const bc7_params = bcn.bc7.Params.init(.basic, true);
+    const snorm: TcBc5Options = .{ .snorm = 1 };
     for (0..ldr_blocks) |i| {
         bc1[i * 8 ..][0..8].* = bcn.bc1.encodeBlock(&rgb[i], .{});
         bc3[i * 16 ..][0..16].* = bcn.bc3.encodeBlock(&rgba[i], .{});
         bc4[i * 8 ..][0..8].* = bcn.bc4.encodeBlock(&red[i]);
         bc5[i * 16 ..][0..16].* = bcn.bc5.encodeBlock(&red_green[i]);
+        const rg: [*]const u8 = @ptrCast(&red_green[i]);
+        const r = tc_bc5_compress_rg8(rg, 4, 4, 8, &snorm, bc5_snorm[i * 16 ..].ptr, 16);
+        std.debug.assert(r == 0);
         bc7[i * 16 ..][0..16].* = bcn.bc7.encodeBlock(&rgba[i], &bc7_params);
     }
     const bc6h_unsigned = try gpa.alloc(u8, hdr_blocks * 16);
@@ -579,6 +648,7 @@ fn prepare(gpa: std.mem.Allocator) !Inputs {
         .bc3 = bc3,
         .bc4 = bc4,
         .bc5 = bc5,
+        .bc5_snorm = bc5_snorm,
         .bc7 = bc7,
         .bc6h_unsigned = bc6h_unsigned,
         .bc6h_signed = bc6h_signed,
