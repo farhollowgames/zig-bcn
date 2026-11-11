@@ -19,11 +19,19 @@ pub fn encodeBlock(pixels: *const [16][2]u8) [block_bytes]u8 {
 }
 
 pub fn decodeBlock(block: *const [block_bytes]u8) [16][2]u8 {
-    const r = bc4.decodeBlock(block[0..8]);
-    const g = bc4.decodeBlock(block[8..16]);
-    var out: [16][2]u8 = undefined;
-    for (&out, r, g) |*p, rv, gv| p.* = .{ rv, gv };
-    return out;
+    const r: @Vector(16, u8) = bc4.decodeBlock(block[0..8]);
+    const g: @Vector(16, u8) = bc4.decodeBlock(block[8..16]);
+    // Red and green alternate: r0, g0, r1, g1 and so on.
+    const alternate = comptime mask: {
+        var m: [32]i32 = undefined;
+        for (0..16) |i| {
+            m[2 * i] = i;
+            m[2 * i + 1] = ~@as(i32, i);
+        }
+        break :mask m;
+    };
+    const pairs: [32]u8 = @shuffle(u8, r, g, alternate);
+    return @bitCast(pairs);
 }
 
 /// Encodes channels 0 and 1 of `src` into `dst`, which must hold

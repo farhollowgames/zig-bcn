@@ -11,30 +11,32 @@ pub fn encodeBlock(values: *const [16]u8) [block_bytes]u8 {
     return stb_dxt.encodeAlphaBlock(values);
 }
 
+/// Decodes 16 values, each in its own lane.
 pub fn decodeBlock(block: *const [block_bytes]u8) [16]u8 {
-    const v0: u32 = block[0];
-    const v1: u32 = block[1];
-    var palette: [8]u8 = undefined;
-    palette[0] = block[0];
-    palette[1] = block[1];
-    if (v0 > v1) {
-        for (1..7) |i_usize| {
-            const i: u32 = @intCast(i_usize);
-            palette[i + 1] = @intCast(((7 - i) * v0 + i * v1 + 3) / 7);
-        }
-    } else {
-        for (1..5) |i_usize| {
-            const i: u32 = @intCast(i_usize);
-            palette[i + 1] = @intCast(((5 - i) * v0 + i * v1 + 2) / 5);
-        }
-        palette[6] = 0;
-        palette[7] = 255;
-    }
+    const v0: Lanes = @splat(block[0]);
+    const v1: Lanes = @splat(block[1]);
+    const bits: @Vector(16, u64) = @splat(std.mem.readInt(u48, block[2..8], .little));
+    const shifts = std.simd.iota(u6, 16) * @as(@Vector(16, u6), @splat(3));
+    const index: Lanes = @intCast((bits >> shifts) & @as(@Vector(16, u64), @splat(7)));
+    return if (block[0] > block[1]) entries(7, index, v0, v1) else entries(5, index, v0, v1);
+}
 
-    const bits = std.mem.readInt(u48, block[2..8], .little);
-    var out: [16]u8 = undefined;
-    for (&out, 0..) |*v, i| v.* = palette[@intCast((bits >> @intCast(3 * i)) & 7)];
-    return out;
+const Lanes = @Vector(16, u32);
+
+/// Palette entries: v0, v1, then `n - 1` values between them, each
+/// ((n - w) * v0 + w * v1 + n / 2) / n for v1's weight w. The 6-entry
+/// palette (n = 5) ends with 0 and 255.
+fn entries(comptime n: u32, index: Lanes, v0: Lanes, v1: Lanes) [16]u8 {
+    const one: Lanes = @splat(1);
+    const top: Lanes = @splat(n);
+    // Entry 1 is v1 at full weight; entry k > 1 gives v1 the weight k - 1.
+    const w = @min(@select(u32, index == one, top, index -| one), top);
+    var value = ((top - w) * v0 + w * v1 + @as(Lanes, @splat(n / 2))) / top;
+    if (n == 5) {
+        value = @select(u32, index == @as(Lanes, @splat(6)), @as(Lanes, @splat(0)), value);
+        value = @select(u32, index == @as(Lanes, @splat(7)), @as(Lanes, @splat(255)), value);
+    }
+    return @as(@Vector(16, u8), @intCast(value));
 }
 
 /// Encodes channel 0 of `src` into `dst`, which must hold
