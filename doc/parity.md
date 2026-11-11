@@ -37,6 +37,7 @@ values of texcomp's `tc_decode_bc4_block_snorm`, and
 blocks, a quarter with endpoints at the edges of the signed range and a
 quarter with equal endpoints; on texcomp's SNORM encoding of the 14
 images; and in windows of a larger image with 2, 3 and 4 channels.
+`STATUS.md` lists where these decoders differ from texcomp's.
 `test/encoding_test.zig` checks that every
 encoder gives a window of a larger image, read through its stride, the bytes
 of a packed copy of it, and that BC4 and BC5 read images of fewer channels
@@ -94,7 +95,8 @@ into images of eight sizes with a wide stride. `bc7.decodeBlockF32` and
 `tc_bc7_decompress_rgbaf` does (each byte divided by 255), compared bit for
 bit on 40,000 random blocks in every mode, the reserved one and first bytes
 with several mode bits, on every first byte, 8,000 encoded blocks and the
-14 encoded images, and in windows of a larger image, RGBA and RGB. And
+14 encoded images, and in windows of a larger image, RGBA and RGB
+(`STATUS.md` lists where they differ from texcomp's). And
 `encodeImage` and
 `decodeImage` for whole images, RGB (3 channels, encoded as opaque RGBA) or
 RGBA, and windows of a larger image (`test/encoding_test.zig`).

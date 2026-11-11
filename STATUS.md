@@ -95,9 +95,51 @@ own decoders.
   ReleaseFast, not an error.
 - The originals are vendored in `reference/`, not fetched as a lazy
   dependency in `build.zig.zon`.
-- `tc_bc7_decompress_rgbaf` allocates a buffer for each call and returns
-  `TC_ERROR_OUT_OF_MEMORY` when that fails; `bc7.decodeImageF32` does not
-  allocate, so it has no such error.
-- BC5 SNORM decodes through `bc5`'s own functions only: `bcn.Encoding` has
-  no SNORM variant, since zig-bcn has no SNORM encoder (stb_dxt has none;
-  texcomp's is one of the encoders left out).
+
+## BC5 SNORM and BC7 float decoders: differences from texcomp
+
+Approved by the author. Every byte and float these decoders write equals
+texcomp's, except where this list says otherwise.
+
+Output:
+
+- `bc5.decodeImageSnorm` writes red and green only. texcomp's
+  `tc_bc5_decompress_rgba8` also writes blue 0 and alpha 255, which
+  zig-bcn's unsigned BC5 decoder leaves out too.
+- `bc5.decodeImageSnorm` takes images of 2, 3 or 4 channels, and
+  `bc7.decodeImageF32` RGB images (3 channels) as well as RGBA, dropping
+  alpha. texcomp writes RGBA only.
+- `bc4.decodeBlockSnorm` and `bc5.decodeBlockSnorm` give signed values;
+  only the image decoder converts them to bytes. texcomp has a signed BC4
+  block decoder but no BC5 one: `bc5.decodeBlockSnorm` gives what
+  `tc_decode_bc4_block_snorm` gives for each half.
+- `bc7.decodeBlockF32` has no texcomp counterpart: texcomp converts to
+  floats only for whole images. It gives `tc_bc7_decompress_rgbaf`'s floats
+  for a 4 x 4 image.
+- `bcn.Encoding` has no BC5 SNORM variant, since zig-bcn has no SNORM
+  encoder (stb_dxt has none; texcomp's is one of the encoders left out).
+
+Arguments and errors:
+
+- `tc_bc7_decompress_rgbaf` allocates a byte image for each call and
+  returns `TC_ERROR_OUT_OF_MEMORY` when that fails. `bc7.decodeImageF32`
+  allocates nothing and has no such error.
+- `tc_bc7_decompress_rgbaf` takes its row stride in bytes and checks
+  neither the stride nor the buffer against it, only that the buffer holds
+  `width * height` packed RGBA floats. A stride under a row overlaps the
+  rows, and one that is not a multiple of 4 stores misaligned floats.
+  zig-bcn's stride counts floats, so it is always aligned, and the
+  decoder asserts that rows do not overlap and that the buffer holds the
+  last row.
+- The other argument checks are asserted, as for every decoder (above).
+
+Source:
+
+- texcomp converts a signed value to a byte in `f32` (`tc_snorm8_to_unorm8`);
+  zig-bcn computes (s + 127) * 255 / 254 rounded half up in integer lanes.
+  The bytes are the same for all 255 values, which the tests reach; the
+  original's three clamps never act, since its caller has already clamped
+  the value to -127 to 127, and are not ported.
+- texcomp decodes the whole BC7 image to bytes, then divides each by 255.
+  zig-bcn divides each block's lanes as it decodes them, with the same
+  `f32` division, so the floats are the same bits.
