@@ -200,7 +200,7 @@ fn craftedBlock(rng: *images.Rng, kind: u32) [16][4]u8 {
 const crafted_kinds = 13;
 
 fn craftedBlocks(comptime n: usize, seed: u64) [n][16][4]u8 {
-    var rng: images.Rng = .{ .state = seed };
+    var rng = common.rng(seed);
     var out: [n][16][4]u8 = undefined;
     for (&out, 0..) |*b, i| b.* = craftedBlock(&rng, @intCast(i % crafted_kinds));
     return out;
@@ -388,7 +388,7 @@ fn tcDecode(block: *const [16]u8) [16][4]u8 {
 test "bc7 decodes like texcomp" {
     ref_bc7e_init();
     var m: common.Mismatches = .{ .label = "bc7 decode" };
-    var rng: images.Rng = .{ .state = 99 };
+    var rng = common.rng(99);
     // Random blocks in every mode, and reserved ones.
     for (0..80000) |i| {
         var block: [16]u8 = undefined;
@@ -412,6 +412,41 @@ test "bc7 decodes like texcomp" {
         }
     };
     try m.finish();
+}
+
+test "bc7 image decode matches texcomp with clipping and a wide stride" {
+    const sizes = [_][2]u32{
+        .{ 1, 1 },  .{ 3, 5 }, .{ 4, 4 },  .{ 5, 2 },
+        .{ 13, 7 }, .{ 2, 9 }, .{ 8, 12 }, .{ images.width, images.height },
+    };
+    var rng = common.rng(0xbc7d);
+    var data: [bcn.encodedLen(16, images.width, images.height)]u8 = undefined;
+    var want: [images.pixel_count * 4 + 12 * images.height]u8 = undefined;
+    var got: [want.len]u8 = undefined;
+    for (sizes) |size| {
+        const w = size[0];
+        const h = size[1];
+        const stride = w * 4 + 12;
+        const len = (h - 1) * stride + w * 4;
+        // Random blocks reach every mode and the reserved one. Both outputs
+        // start from the same bytes, so the decoders must leave the padding,
+        // and the pixels past the image, alone.
+        for (&data) |*b| b.* = rng.byte();
+        for (want[0..len], got[0..len]) |*a, *b| {
+            a.* = rng.byte();
+            b.* = a.*;
+        }
+        const rc = tc_bc7_decompress_rgba8(&data, w, h, stride, &want, len);
+        try std.testing.expectEqual(@as(c_int, 0), rc);
+        bc7.decodeImage(&data, .{
+            .pixels = got[0..len],
+            .width = w,
+            .height = h,
+            .stride = stride,
+            .channels = 4,
+        });
+        try std.testing.expectEqualSlices(u8, want[0..len], got[0..len]);
+    }
 }
 
 // Root mean square error bounds per image (in ldr_names order) at the basic

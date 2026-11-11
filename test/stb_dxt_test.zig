@@ -122,7 +122,7 @@ test "bc4 and bc5 encode like stb_dxt" {
 }
 
 test "bc1, bc3 and bc4 decode like texcomp" {
-    var rng: images.Rng = .{ .state = 42 };
+    var rng = common.rng(42);
     var m: common.Mismatches = .{ .label = "decode" };
     for (0..20000) |i| {
         // Random bytes reach every mode, including BC1's 3-colour mode.
@@ -210,7 +210,7 @@ extern fn tc_bc5_decompress_rgba8(bc5: [*]const u8, width: u32, height: u32, sno
 
 test "image decoders match texcomp, with clipping and a wide stride" {
     const sizes = [_][2]u32{ .{ 1, 1 }, .{ 3, 5 }, .{ 4, 4 }, .{ 13, 7 }, .{ images.width, images.height } };
-    var rng: images.Rng = .{ .state = 7 };
+    var rng = common.rng(7);
     var data: [bcn.encodedLen(16, images.width, images.height)]u8 = undefined;
     var want: [images.pixel_count * 4 + 64 * images.height]u8 = undefined;
     var got: [images.pixel_count * 4 + 64 * images.height]u8 = undefined;
@@ -282,7 +282,7 @@ fn craftedBlock(rng: *images.Rng, kind: u32) [16][4]u8 {
 }
 
 test "crafted blocks encode like stb_dxt" {
-    var rng: images.Rng = .{ .state = 0x5eed };
+    var rng = common.rng(0x5eed);
     var m: common.Mismatches = .{ .label = "crafted" };
     for (0..200_000) |i| {
         var px = craftedBlock(&rng, @intCast(i % 5));

@@ -14,6 +14,7 @@ pub fn build(b: *std.Build) void {
     // Debug, and ReleaseSafe keeps every assert and overflow check on.
     const test_optimize = b.option(std.lang.Optimize, "test-optimize", "Optimize mode for the tests (default ReleaseSafe)") orelse .safe;
     const test_filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match any filter") orelse &.{};
+    const fuzz_seed = b.option(u64, "fuzz-seed", "Offset every fuzz test's seed (default 0)") orelse 0;
 
     const bcn_test_mod = b.createModule(.{
         .root_source_file = b.path("src/bcn.zig"),
@@ -27,10 +28,26 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(unit_tests).step);
 
     // The original C and C++ encoders, built only for the differential tests.
-    // Fused multiply-adds are off so the float paths round as written, as
-    // Zig's do.
-    const reference = b.addLibrary(.{
-        .name = "bcn_reference",
+    const reference = referenceLibrary(b, target, "bcn_reference", &.{});
+    const differential = differentialTest(b, target, test_optimize, bcn_test_mod, test_filters, fuzz_seed, false);
+    differential.root_module.linkLibrary(reference);
+    test_step.dependOn(&b.addRunArtifact(differential).step);
+
+    addCoverage(b, target, test_optimize, bcn_test_mod, test_filters, fuzz_seed);
+    addBench(b, target);
+}
+
+/// The originals from reference/ as a static library for `target`. Fused
+/// multiply-adds are off so the float paths round as written, as Zig's do.
+/// `extra_flags` come last, so they override the defaults.
+fn referenceLibrary(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    name: []const u8,
+    extra_flags: []const []const u8,
+) *std.Build.Step.Compile {
+    const library = b.addLibrary(.{
+        .name = name,
         .linkage = .static,
         .root_module = b.createModule(.{
             .target = target,
@@ -41,15 +58,53 @@ pub fn build(b: *std.Build) void {
             .link_libcpp = true,
         }),
     });
-    for (reference_include_dirs) |dir| reference.root_module.addIncludePath(b.path(dir));
-    reference.root_module.addCSourceFiles(.{ .root = b.path("reference"), .files = &reference_c_files, .flags = &c_flags });
-    reference.root_module.addCSourceFiles(.{ .root = b.path("reference"), .files = &reference_cpp_files, .flags = &cpp_flags });
+    for (reference_include_dirs) |dir| library.root_module.addIncludePath(b.path(dir));
+    library.root_module.addCSourceFiles(.{
+        .root = b.path("reference"),
+        .files = &reference_c_files,
+        .flags = std.mem.concat(b.allocator, []const u8, &.{ &c_flags, extra_flags }) catch @panic("OOM"),
+    });
+    library.root_module.addCSourceFiles(.{
+        .root = b.path("reference"),
+        .files = &reference_cpp_files,
+        .flags = std.mem.concat(b.allocator, []const u8, &.{ &cpp_flags, extra_flags }) catch @panic("OOM"),
+    });
+    return library;
+}
 
-    const differential = differentialTest(b, target, test_optimize, bcn_test_mod, test_filters, false);
-    differential.root_module.linkLibrary(reference);
-    test_step.dependOn(&b.addRunArtifact(differential).step);
-
-    addCoverage(b, target, test_optimize, bcn_test_mod, test_filters);
+/// `zig build bench`: zig-bcn in ReleaseFast against the originals at -O3,
+/// both for `target`. Arguments after `--` go to the benchmark; the binary
+/// is also installed as zig-out/bin/bench, for profiling.
+fn addBench(b: *std.Build, target: std.Build.ResolvedTarget) void {
+    const bench_step = b.step("bench", "Benchmark every encoder and decoder against its original");
+    // Zig builds C in ReleaseFast at -O2; the originals are measured at -O3.
+    const reference = referenceLibrary(b, target, "bcn_reference_bench", &.{"-O3"});
+    const bench = b.addExecutable(.{
+        .name = "bench",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bench/bench.zig"),
+            .target = target,
+            .optimize = .fast,
+            .link_libc = true,
+            .imports = &.{
+                .{ .name = "bcn", .module = b.createModule(.{
+                    .root_source_file = b.path("src/bcn.zig"),
+                    .target = target,
+                    .optimize = .fast,
+                }) },
+                .{ .name = "images", .module = b.createModule(.{
+                    .root_source_file = b.path("test/images.zig"),
+                    .target = target,
+                    .optimize = .fast,
+                }) },
+            },
+        }),
+    });
+    bench.root_module.linkLibrary(reference);
+    const run = b.addRunArtifact(bench);
+    run.addPassthruArgs();
+    bench_step.dependOn(&run.step);
+    bench_step.dependOn(&b.addInstallArtifact(bench, .{}).step);
 }
 
 const reference_include_dirs = [_][]const u8{ "reference/texcomp/include", "reference/texcomp/src" };
@@ -98,10 +153,12 @@ fn differentialTest(
     test_optimize: std.lang.Optimize,
     bcn_test_mod: *std.Build.Module,
     test_filters: []const []const u8,
+    fuzz_seed: u64,
     coverage: bool,
 ) *std.Build.Step.Compile {
     const options = b.addOptions();
     options.addOption(bool, "coverage", coverage);
+    options.addOption(u64, "fuzz_seed", fuzz_seed);
     return b.addTest(.{
         .name = if (coverage) "differential-coverage" else "differential",
         .root_module = b.createModule(.{
@@ -131,6 +188,7 @@ fn addCoverage(
     test_optimize: std.lang.Optimize,
     bcn_test_mod: *std.Build.Module,
     test_filters: []const []const u8,
+    fuzz_seed: u64,
 ) void {
     const coverage_step = b.step("coverage", "Report the differential tests' line and branch coverage of the original sources (needs clang and llvm-cov)");
     const instrument = [_][]const u8{ "-O1", "-fPIC", "-fprofile-instr-generate", "-fcoverage-mapping" };
@@ -155,7 +213,7 @@ fn addCoverage(
         }
     }
 
-    const differential = differentialTest(b, target, test_optimize, bcn_test_mod, test_filters, true);
+    const differential = differentialTest(b, target, test_optimize, bcn_test_mod, test_filters, fuzz_seed, true);
     differential.root_module.addObjectFile(shared);
     differential.root_module.addRPath(shared.dirname());
 

@@ -58,11 +58,16 @@ test "bc6h high blocks decode to their reported error and never lose to fast, on
 }
 
 test "bc6h high blocks decode to their reported error and never lose to fast, on fuzz blocks and the corpus" {
-    var rng: images.Rng = .{ .state = 0xb6 };
+    var rng = common.rng(0xb6);
     for (0..4000) |i| {
         const px = bc6h_test.fuzzBlock(&rng);
         for (formats) |format| checkBlock(&px, format) catch |err| {
-            std.debug.print("fuzz block {d} {t}: {any}\n", .{ i, format, px });
+            std.debug.print("fuzz block {d} {t} (-Dfuzz-seed=0x{x}): {any}\n", .{
+                i,
+                format,
+                common.fuzz_seed,
+                px,
+            });
             return err;
         };
     }
@@ -94,7 +99,7 @@ test "bc6h high stores every flat colour exactly" {
 }
 
 test "bc6h high packs every mode's fields the way the decoder reads them" {
-    var rng: images.Rng = .{ .state = 0xfe1d };
+    var rng = common.rng(0xfe1d);
     for (0..14) |m| {
         const mode = bcn.bc6h.modes[m];
         for (0..2000) |_| {

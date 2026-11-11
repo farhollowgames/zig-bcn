@@ -2,9 +2,19 @@
 
 const std = @import("std");
 const bcn = @import("bcn");
+const build_options = @import("build_options");
 const images = @import("images.zig");
 
 pub const max_reported = 5;
+
+/// `zig build test -Dfuzz-seed=N` offsets every fuzz test's seed by N, to
+/// explore other inputs; 0, the default, gives the recorded ones.
+pub const fuzz_seed: u64 = build_options.fuzz_seed;
+
+/// The generator of a fuzz test whose recorded seed is `base`.
+pub fn rng(base: u64) images.Rng {
+    return .{ .state = base ^ fuzz_seed };
+}
 
 /// Counts differing blocks and prints the first few with their inputs.
 pub const Mismatches = struct {
@@ -20,7 +30,11 @@ pub const Mismatches = struct {
 
     pub fn finish(self: Mismatches) !void {
         if (self.count == 0) return;
-        std.debug.print("{s}: {d} blocks differ\n", .{ self.label, self.count });
+        std.debug.print("{s}: {d} blocks differ (-Dfuzz-seed=0x{x})\n", .{
+            self.label,
+            self.count,
+            fuzz_seed,
+        });
         return error.Mismatch;
     }
 };

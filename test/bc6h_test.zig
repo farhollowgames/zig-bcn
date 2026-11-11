@@ -123,7 +123,7 @@ test "bc6h decodes like texcomp" {
         }
     }
     // Random blocks reach every mode, reserved ones included.
-    var rng: images.Rng = .{ .state = 0x6c6 };
+    var rng = common.rng(0x6c6);
     for (0..200_000) |i| {
         var block: [16]u8 = undefined;
         for (&block) |*b| b.* = rng.byte();
@@ -244,7 +244,7 @@ pub fn fuzzBlock(rng: *images.Rng) [16][3]f32 {
 }
 
 test "bc6h every mode encoder matches texcomp on fuzz blocks" {
-    var rng: images.Rng = .{ .state = 0xbc6f };
+    var rng = common.rng(0xbc6f);
     var m: common.Mismatches = .{ .label = "bc6h fuzz" };
     var wins: [2][15]u32 = @splat(@splat(0));
     var tried: [2][15]u32 = @splat(@splat(0));
@@ -313,35 +313,82 @@ test "bc6h compressed size matches texcomp" {
     try std.testing.expectEqual(@as(usize, 0), tc_bc6h_compressed_size(0, 5));
 }
 
-test "bc6h encodes and decodes padded rows like texcomp" {
-    // A 13x9 window of the gradient image, read with its full row stride,
-    // and decoded into rows padded by 5 texels.
-    const img = images.hdr(1);
-    const w = 13;
-    const h = 9;
-    const floats: []const f32 = @as([*]const f32, @ptrCast(&img.pixels))[0 .. images.pixel_count * 3];
-    const src: bcn.Image(f32) = .{ .pixels = floats, .width = w, .height = h, .stride = images.width * 3, .channels = 3 };
-    for (formats) |format| {
-        var want: [bcn.encodedLen(16, w, h)]u8 = undefined;
-        var got: [want.len]u8 = undefined;
-        var opt: TcOptions = .{ .signed_float = @intFromBool(format == .signed), .reserved = 0 };
-        try std.testing.expectEqual(@as(c_int, 0), tc_bc6h_compress_rgb32f(floats.ptr, w, h, images.width * 3 * 4, &opt, &want, want.len));
-        bcn.bc6h.encodeImage(src, &got, format);
-        try std.testing.expectEqualSlices(u8, &want, &got);
+test "bc6h encodes and decodes every edge size and padded rows like texcomp" {
+    // Windows of the HDR set, read with the full row stride and decoded into
+    // rows padded by 5 texels. Every size up to 9x9 meets each edge residue
+    // in both directions; then strips, an odd window and the whole image.
+    const pad = 5;
+    var sizes: [81 + 4][2]u32 = undefined;
+    for (sizes[0..81], 0..) |*s, i| s.* = .{ @intCast(i % 9 + 1), @intCast(i / 9 + 1) };
+    sizes[81..].* = .{ .{ 13, 9 }, .{ 17, 2 }, .{ 2, 17 }, .{ images.width, images.height } };
+    var rng = common.rng(0xed6e);
+    var want: [encoded_len]u8 = undefined;
+    var got: [encoded_len]u8 = undefined;
+    var want_h: [(images.width + pad) * 3 * images.height]u16 = undefined;
+    var got_h: [want_h.len]u16 = undefined;
+    var want_f: [(images.width + pad) * 4 * images.height]f32 = undefined;
+    var got_f: [want_f.len]f32 = undefined;
+    for (sizes, 0..) |size, i| {
+        const w = size[0];
+        const h = size[1];
+        const img = images.hdr(i % images.hdr_names.len);
+        const floats: []const f32 = std.mem.bytesAsSlice(f32, std.mem.sliceAsBytes(&img.pixels));
+        const src: bcn.Image(f32) = .{
+            .pixels = floats,
+            .width = w,
+            .height = h,
+            .stride = images.width * 3,
+            .channels = 3,
+        };
+        const len = bcn.encodedLen(16, w, h);
+        for (formats) |format| {
+            const signed = @intFromBool(format == .signed);
+            const opt: TcOptions = .{ .signed_float = signed, .reserved = 0 };
+            const stride_bytes = images.width * 3 * @sizeOf(f32);
+            const rc = tc_bc6h_compress_rgb32f(floats.ptr, w, h, stride_bytes, &opt, &want, len);
+            try std.testing.expectEqual(@as(c_int, 0), rc);
+            bcn.bc6h.encodeImage(src, got[0..len], format);
+            try std.testing.expectEqualSlices(u8, want[0..len], got[0..len]);
 
-        const row = (w + 5) * 3;
-        var want_h: [row * h]u16 = @splat(0);
-        var got_h: [row * h]u16 = @splat(0);
-        try std.testing.expectEqual(@as(c_int, 0), tc_bc6h_decompress_rgb16f(&want, w, h, opt.signed_float, row * 2, &want_h, want_h.len * 2));
-        bcn.bc6h.decodeImage(&got, .{ .pixels = &got_h, .width = w, .height = h, .stride = row, .channels = 3 }, format);
-        try std.testing.expectEqualSlices(u16, &want_h, &got_h);
+            // Both destinations start from the same bytes, so the padding
+            // and the texels past the image must be left as they were.
+            const row = (w + pad) * 3;
+            const len_h = row * h;
+            fillSame(&rng, std.mem.sliceAsBytes(want_h[0..len_h]), std.mem.sliceAsBytes(got_h[0..len_h]));
+            const half_rc = tc_bc6h_decompress_rgb16f(&want, w, h, signed, row * 2, &want_h, len_h * 2);
+            try std.testing.expectEqual(@as(c_int, 0), half_rc);
+            bcn.bc6h.decodeImage(got[0..len], .{
+                .pixels = got_h[0..len_h],
+                .width = w,
+                .height = h,
+                .stride = row,
+                .channels = 3,
+            }, format);
+            try std.testing.expectEqualSlices(u16, want_h[0..len_h], got_h[0..len_h]);
 
-        const row_f = (w + 5) * 4;
-        var want_f: [row_f * h]f32 = @splat(0);
-        var got_f: [row_f * h]f32 = @splat(0);
-        try std.testing.expectEqual(@as(c_int, 0), tc_bc6h_decompress_rgbaf(&want, w, h, opt.signed_float, row_f * 4, &want_f, want_f.len * 4));
-        bcn.bc6h.decodeImageF32(&got, .{ .pixels = &got_f, .width = w, .height = h, .stride = row_f, .channels = 4 }, format);
-        try std.testing.expectEqualSlices(u8, std.mem.sliceAsBytes(&want_f), std.mem.sliceAsBytes(&got_f));
+            const row_f = (w + pad) * 4;
+            const len_f = row_f * h;
+            fillSame(&rng, std.mem.sliceAsBytes(want_f[0..len_f]), std.mem.sliceAsBytes(got_f[0..len_f]));
+            const f32_rc = tc_bc6h_decompress_rgbaf(&want, w, h, signed, row_f * 4, &want_f, len_f * 4);
+            try std.testing.expectEqual(@as(c_int, 0), f32_rc);
+            bcn.bc6h.decodeImageF32(got[0..len], .{
+                .pixels = got_f[0..len_f],
+                .width = w,
+                .height = h,
+                .stride = row_f,
+                .channels = 4,
+            }, format);
+            const want_bytes = std.mem.sliceAsBytes(want_f[0..len_f]);
+            try std.testing.expectEqualSlices(u8, want_bytes, std.mem.sliceAsBytes(got_f[0..len_f]));
+        }
+    }
+}
+
+/// Fills `a` with random bytes and `b` with the same.
+fn fillSame(rng: *images.Rng, a: []u8, b: []u8) void {
+    for (a, b) |*x, *y| {
+        x.* = rng.byte();
+        y.* = x.*;
     }
 }
 
