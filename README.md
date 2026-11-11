@@ -101,7 +101,8 @@ Format specifics:
 - **BC4 and BC5** encode channel 0, or channels 0 and 1, of an image with
   any number of channels. `bc4.decodeBlockSnorm` and `bc5.decodeBlockSnorm`
   decode signed (BC4_SNORM, BC5_SNORM) blocks to `i8` from -127 to 127
-  (-128 decodes as -127, as both mean -1); `bc5.decodeImageSnorm` writes
+  (an endpoint of -128 decodes as -127, as both mean -1, while the entries
+  between take it as -128, as texcomp's do); `bc5.decodeImageSnorm` writes
   them as bytes in the normal-map convention, where a byte u stands for
   2u / 255 − 1, as texcomp does. zig-bcn has no SNORM encoder.
 - **BC7** takes `Params`, an `extern struct` with bc7e's exact layout:

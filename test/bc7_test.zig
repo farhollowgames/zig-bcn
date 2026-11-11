@@ -576,6 +576,7 @@ test "bc7 float image decode matches texcomp in windows of a larger image, RGB a
         .{ images.width, images.height, 0, 0 },
     };
     var rng = common.rng(0xbc7e);
+    errdefer std.debug.print("-Dfuzz-seed={d}\n", .{common.fuzz_seed});
     var data: [bcn.encodedLen(16, images.width, images.height)]u8 = undefined;
     var packed_rgba: [images.pixel_count][4]f32 = undefined;
     var want: [images.pixel_count * 4]f32 = undefined;

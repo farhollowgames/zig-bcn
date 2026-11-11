@@ -20,7 +20,9 @@ pub fn decodeBlock(block: *const [block_bytes]u8) [16]u8 {
 }
 
 /// Decodes a signed block (BC4_SNORM), whose endpoints are `i8`. Values
-/// stay in -127 to 127: -128 means -1 as -127 does, and decodes as -127.
+/// stay in -127 to 127: an endpoint of -128 means -1 as -127 does, and
+/// decodes as -127, but the entries between the endpoints take it as -128,
+/// as texcomp's do, so they can lie one below those of an endpoint of -127.
 pub fn decodeBlockSnorm(block: *const [block_bytes]u8) [16]i8 {
     const e0: i8 = @bitCast(block[0]);
     const e1: i8 = @bitCast(block[1]);
