@@ -38,14 +38,18 @@ asakusa.exr, the representative case:
 | --- | --- | --- | --- | --- |
 | unsigned | texcomp (AVX2) | 0.0154 | 43.86 | 33.4 |
 | unsigned | texcomp scalar | same bytes | | 12.1 |
-| unsigned | zig-bcn `.fast` | same bytes | | 12.1 |
+| unsigned | zig-bcn `.fast` | same bytes | | see below |
 | unsigned | DirectXTex | 0.0127 | 45.40 | 0.02 |
 | unsigned | **zig-bcn `.high`** | **0.0119** | **46.01** | **0.54** |
 | signed | texcomp (AVX2) | 0.0165 | 43.40 | 6.9 |
 | signed | texcomp scalar | same bytes | | 3.1 |
-| signed | zig-bcn `.fast` | same bytes | | 3.5 |
+| signed | zig-bcn `.fast` | same bytes | | see below |
 | signed | DirectXTex | 0.0128 | 45.35 | 0.02 |
 | signed | **zig-bcn `.high`** | **0.0120** | **45.94** | **0.49** |
+
+zig-bcn's `.fast` writes texcomp's bytes and runs its selector search on
+vectors. It was not timed on this photograph; the README's benchmark times
+it against texcomp, built for the same CPU, on the test image set.
 
 The synthetic images, mPSNR in dB, unsigned (signed in brackets where it
 differs by more than a few tenths):
@@ -121,10 +125,10 @@ lightmaps. It is better than DirectXTex on a real photograph (46.0 against
 with: a 2048 x 2048 HDR texture takes about 8 seconds on one core, and
 blocks are independent, so it divides by the number of cores.
 
-Use `.fast` for editor previews and hot reload, where 12 Mpixel/s matters
-more than 2 dB: it is texcomp's encoder byte for byte, good on photographs
-(43.9 dB) but weak on flat and smooth regions, and it flushes values below
-2^-14 to zero.
+Use `.fast` for editor previews and hot reload, where speed matters more
+than 2 dB: it is texcomp's encoder byte for byte, many times faster than
+`.high`, good on photographs (43.9 dB) but weak on flat and smooth regions,
+and it flushes values below 2^-14 to zero.
 
 ## Reproducing
 

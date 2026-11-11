@@ -31,7 +31,7 @@ Requires Zig 0.17.0.
 Add the package:
 
 ```sh
-zig fetch --save git+https://github.com/farhollowgames/zig-bcn#v0.1.0
+zig fetch --save git+https://github.com/farhollowgames/zig-bcn#v0.2.0
 ```
 
 and import its module in `build.zig`:
@@ -140,17 +140,16 @@ aimed at paths images rarely reach.
 
 ## Quality and speed
 
-The encoders keep their originals' quality and speed, per core; encoding
-in bands scales with the cores (BC7 `basic` on a 1024 x 1024 image: 1.05 s
-on one thread, 62 ms on 32). The BC7 port runs at
-1.0 to 1.25 times the scalar C++'s time per block. The BC6H port runs at
-the speed of texcomp's scalar C (texcomp's AVX2 build is about 2.7 times
-faster).
+The encoders keep their originals' quality, and encoding in bands scales
+with the cores (BC7 `basic` on a 1024 x 1024 image: 1.05 s on one thread,
+62 ms on 32). On one core, every encoder and decoder runs about as fast
+as its original or faster, except the BC7 encoder, at about four fifths of
+bc7e's speed (see [Benchmark](#benchmark)).
 
-texcomp's BC6H (`Quality.fast`) is fast, about 12 megapixels a second on
-one core, and close to Microsoft's DirectXTex on photographs (43.9 against
-45.4 dB mPSNR), but weaker on flat and smooth HDR content such as skies and
-light sources, and it flushes values below 2^-14 to zero.
+texcomp's BC6H (`Quality.fast`) is fast, and close to Microsoft's
+DirectXTex on photographs (43.9 against 45.4 dB mPSNR), but weaker on flat
+and smooth HDR content such as skies and light sources, and it flushes
+values below 2^-14 to zero.
 
 `Quality.high` is zig-bcn's own BC6H encoder, not a translation: a search
 over every mode, scored by the exact error of what decodes. It beats
@@ -160,6 +159,75 @@ on one core, 25 times DirectXTex's speed. With no original to match, its
 tests prove instead that every block decodes, in texcomp's decoder and
 zig-bcn's, to exactly the error the encoder reported, and that it is never
 worse than `.fast`. See [`doc/bc6h-quality.md`](doc/bc6h-quality.md).
+
+## Benchmark
+
+`zig build bench` times every encoder against its original and every decoder
+against texcomp's, on one thread, on every block of the test image set
+(2,688 RGBA and 1,536 HDR blocks), and checks that both write the same
+bytes. The BC6H `simd` rows run texcomp with its AVX2 selector kernels, the
+other BC6H rows with its scalar search. zig-bcn is built ReleaseFast and the
+originals at `-O3`, both for the CPU they run on, the originals with the
+flags their exact output needs (`-ffp-contract=off -fno-fast-math`, and
+`-fwrapv` for texcomp). Each sample lasts at least 25 ms of the thread's CPU
+time, after two warm-ups, and the two sides' samples alternate. A row gives
+the median of 11 samples, the best of three rounds, in megapixels a second;
+range is (slowest − fastest) / median.
+
+```sh
+zig build bench -- --rounds 3
+```
+
+AMD Ryzen 9 9950X3D, Linux 7.3, Zig 0.17.0 (`x86_64` `znver5`). The
+numbers were taken while other builds ran on the machine, so absolute
+speeds move by up to a fifth between runs; the ratios, from alternating
+samples, move less.
+
+| feature | zig-bcn Mpix/s | range | original Mpix/s | range | zig-bcn / original |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| bc1 encode normal | 166.07 | 5.9% | 144.53 | 1.5% | 1.15 |
+| bc1 encode high | 147.65 | 18.6% | 127.76 | 2.8% | 1.16 |
+| bc1 encode normal biased | 167.19 | 1.3% | 138.29 | 0.8% | 1.21 |
+| bc3 encode normal | 121.79 | 4.8% | 111.69 | 2.6% | 1.09 |
+| bc3 encode high | 110.34 | 6.5% | 99.65 | 3.2% | 1.11 |
+| bc4 encode | 487.49 | 3.3% | 481.56 | 6.9% | 1.01 |
+| bc5 encode | 232.63 | 1.4% | 242.49 | 3.8% | 0.96 |
+| bc7 encode ultrafast | 8.39 | 0.9% | 10.41 | 1.3% | 0.81 |
+| bc7 encode veryfast | 2.56 | 1.0% | 3.15 | 2.0% | 0.81 |
+| bc7 encode fast | 2.57 | 4.4% | 3.17 | 3.0% | 0.81 |
+| bc7 encode basic | 1.67 | 4.0% | 2.11 | 2.8% | 0.79 |
+| bc7 encode basic linear | 0.97 | 1.1% | 1.15 | 0.7% | 0.85 |
+| bc7 encode slow | 1.28 | 4.1% | 1.58 | 5.6% | 0.81 |
+| bc7 encode veryslow | 0.35 | 3.2% | 0.42 | 1.6% | 0.82 |
+| bc7 encode slowest | 0.27 | 0.7% | 0.32 | 1.2% | 0.84 |
+| bc6h encode unsigned | 4.92 | 0.6% | 3.16 | 0.8% | 1.56 |
+| bc6h encode signed | 3.38 | 2.1% | 2.90 | 2.9% | 1.17 |
+| bc6h encode unsigned, texcomp simd | 4.86 | 1.4% | 3.08 | 2.6% | 1.58 |
+| bc6h encode signed, texcomp simd | 3.26 | 3.6% | 2.69 | 3.2% | 1.21 |
+| bc6h encode high unsigned | 0.66 | 0.3% | no original | | |
+| bc6h encode high signed | 0.61 | 0.6% | no original | | |
+| bc1 decode | 1825.88 | 1.1% | 1319.43 | 2.1% | 1.38 |
+| bc3 decode | 1354.28 | 1.5% | 794.29 | 1.7% | 1.71 |
+| bc4 decode | 6710.07 | 1.9% | 2602.34 | 2.1% | 2.58 |
+| bc5 decode | 1245.02 | 6.2% | 972.02 | 2.8% | 1.28 |
+| bc7 decode | 525.35 | 7.3% | 240.33 | 1.9% | 2.19 |
+| bc6h decode unsigned | 740.69 | 3.7% | 297.71 | 0.9% | 2.49 |
+| bc6h decode signed | 643.87 | 4.6% | 219.48 | 5.5% | 2.93 |
+
+- **BC7 encoding is slower than bc7e,** at about four fifths of its speed.
+  The time is spread over the translated search rather than one loop: its
+  perceptual palette search, run on vectors, keeps every byte but gains
+  nothing measurable.
+- **BC6H** runs its selector search and partition boxes on vectors of the
+  block's 16 texels, with the same integer arithmetic as texcomp's SIMD
+  kernels. texcomp's own AVX2 kernels make no difference here: built for
+  this CPU, its scalar search is vectorized by the compiler too.
+- **The decoders** decode a block's 16 pixels at once, in vector lanes.
+  texcomp's BC5 decoder writes blue and alpha as well; zig-bcn's writes
+  red and green only.
+- **The exactness flags** cost the originals little: built with fused
+  multiply-add and without `-fwrapv`, they write different bytes, and only
+  BC1 gets measurably faster (about a tenth).
 
 ## Licence and credits
 

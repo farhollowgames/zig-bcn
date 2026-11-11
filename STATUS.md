@@ -1,0 +1,98 @@
+# Port status
+
+Every public function, option, mode and build switch of the pinned
+originals, with its state:
+
+- **not started**: nothing in zig-bcn yet;
+- **ported**: translated, with no test against the original;
+- **oracle-tested**: the original runs on the same inputs in `zig build test`
+  and every output byte and returned value matches;
+- **benchmarked**: oracle-tested, and timed against the original by
+  `zig build bench` (the README has the table);
+- **reviewed**: benchmarked, through the performance pass, the skeptic and
+  the fixes, and released.
+
+The pinned originals are vendored in `reference/` (see
+`reference/README.md`): stb_dxt v1.12 (`2c980bb`), basis_universal `v2_50`
+(`9bebe16`) for bc7e, and TinyEXR `644148d` for texcomp. `doc/parity.md`
+says which test compares each item and on what inputs.
+
+## stb_dxt.h (BC1, BC3, BC4, BC5)
+
+| original | zig-bcn | state |
+| --- | --- | --- |
+| `stb_compress_dxt_block(dest, src, alpha = 0, mode)` | `bc1.encodeBlock`, `bc1.encodeImage` | benchmarked |
+| `stb_compress_dxt_block(dest, src, alpha = 1, mode)` | `bc3.encodeBlock`, `bc3.encodeImage` | benchmarked |
+| `stb_compress_bc4_block` | `bc4.encodeBlock`, `bc4.encodeImage` | benchmarked |
+| `stb_compress_bc5_block` | `bc5.encodeBlock`, `bc5.encodeImage` | benchmarked |
+| mode `STB_DXT_NORMAL`, `STB_DXT_HIGHQUAL` | `Settings.quality` `.normal`, `.high` | benchmarked |
+| mode `STB_DXT_DITHER` (deprecated: "does nothing") | no option | oracle-tested: modes 1 and 3 give the bytes of 0 and 2 |
+| `STB_DXT_USE_ROUNDING_BIAS` | `Settings.rounding = .biased` | benchmarked |
+| `STB_DXT_GENERATE_TABLES` | `generateOMatch` | oracle-tested: regenerates both tables |
+| `STB_DXT_STATIC`, `STBD_FABS`, `STB_DXT_IMPLEMENTATION` | left out: C linkage and libm configuration | |
+
+## basisu_bc7e_scalar (BC7)
+
+| original | zig-bcn | state |
+| --- | --- | --- |
+| `bc7e_compress_block_init` | none needed: tables built at compile time | oracle-tested through the encoder: the differential tests reach every entry it reads; a unit test checks the tables against a translation of the original's build |
+| `bc7e_compress_block_params_init` (base settings) | `Params.initDefaults` | oracle-tested |
+| `..._init_ultrafast` to `..._init_slowest` (7 levels) | `Params.init(level, perceptual)` | benchmarked (all 7, perceptual; `basic` linear too) |
+| `bc7e_compress_block_params` and every field | `Params` (`extern struct`, same layout) | oracle-tested: every field on more than one value |
+| `bc7e_compress_blocks(n, blocks, pixels, params, used_lut)` | `bc7.encodeBlock`, `bc7.encodeImage` | benchmarked |
+| `pUsed_lut` | `bc7.encodeBlockReportingLut` | oracle-tested |
+| `bc7e_compress_block_single_mode` | `bc7.encodeBlockSingleMode` | oracle-tested: blocks and errors, every mode, partition, rotation and index selector |
+| `BC7E_NON_DETERMINISTIC` | left out: hard-coded to 0 in the original; the port is that value | |
+| `HERE()` debug macro | left out: unused in the original | |
+| `BC7E_*` constants | same constants | ported |
+
+## texcomp (BC6H, and the decoders zig-bcn is checked against)
+
+zig-bcn ports texcomp's BC6H encoder and decoder. texcomp's other codecs
+are not ported: stb_dxt and bc7e are the BC1 to BC5 and BC7 encoders, and
+texcomp's BC1, BC3, BC4, BC5 and BC7 decoders are the oracle for zig-bcn's
+own decoders.
+
+| original | zig-bcn | state |
+| --- | --- | --- |
+| `tc_bc6h_compress_rgb32f` | `bc6h.encodeImage` | benchmarked (as its block encoder) |
+| block encoders `tc_encode_bc6h_block_uf16`, `_sf16` | `bc6h.encodeBlock` | benchmarked |
+| every mode encoder, both formats | `bc6h.texcomp.encodeMode` | oracle-tested: blocks and error estimates |
+| `tc_bc6h_options.signed_float`, `opt = NULL` | `Format` | benchmarked (both formats) |
+| `tc_bc6h_options_init` | none needed: `Format` is an argument | oracle-tested |
+| `tc_bc6h_compressed_size` | `encodedLen(16, w, h)` | oracle-tested, 1x1 to 69x69 |
+| `tc_float_to_half_bits` | `bc6h.floatToHalfBits` | oracle-tested on all 2^32 floats |
+| `tc_bc6h_decompress_rgb16f` | `bc6h.decodeImage` | benchmarked |
+| `tc_bc6h_decompress_rgbaf` | `bc6h.decodeImageF32` | oracle-tested |
+| `tc_bc6h_decode_block_half` | `bc6h.decodeBlock` | benchmarked |
+| SSE4.1, AVX2 and NEON selector kernels | the scalar search, run on vectors | oracle-tested: the original under every x86 kernel |
+| `tc_backend_*` (kernel dispatch) | left out: zig-bcn has one search | |
+| `tc_bc6h_options.reserved` | left out: texcomp never reads it | |
+| `tc_dds_bc6h_size`, `tc_dds_write_bc6h_memory` | left out: DDS containers are outside a codec | |
+| `tc_bc1_decompress_rgba8`, `tc_bc3_decompress_rgba8` | `bc1.decodeImage`, `bc3.decodeImage` (zig-bcn's own) | benchmarked |
+| `tc_decode_bc4_block` | `bc4.decodeBlock` (zig-bcn's own) | benchmarked |
+| `tc_bc5_decompress_rgba8`, unsigned | `bc5.decodeImage` (zig-bcn's own; writes R and G only) | benchmarked |
+| `tc_bc7_decompress_rgba8` | `bc7.decodeImage` (zig-bcn's own) | benchmarked |
+| `tc_bc5_decompress_rgba8`, signed (`snorm = 1`) | not started: no BC5 SNORM decoder | |
+| `tc_bc7_decompress_rgbaf` | not started: no BC7 float decoder | |
+| texcomp's BC1, BC3, BC5 and BC7 encoders, ETC2, EAC, ASTC, the `uni` format and transcoders, and the other DDS writers | left out: other encoders or formats than the ones chosen | |
+
+## zig-bcn's own
+
+| feature | state |
+| --- | --- |
+| `bc6h.Quality.high` encoder (`src/bc6h_high.zig`) | benchmarked; no original, so its tests check what it decodes to (`test/bc6h_high_test.zig`) |
+| `bcn.Encoding`: one call, row bands, threads | tested: the format functions' bytes, in bands, on 1, 2 and 8 threads |
+
+## Left out, for the author to approve
+
+- Every row above marked "left out", with its reason.
+- Argument errors: texcomp returns `TC_ERROR_INVALID_ARGUMENT` for null
+  pointers, zero sizes and short strides or buffers; zig-bcn asserts
+  instead, since slices carry their lengths. A caller passing a short
+  buffer gets a panic in Debug and ReleaseSafe and undefined behaviour in
+  ReleaseFast, not an error.
+- The originals are vendored in `reference/`, not fetched as a lazy
+  dependency in `build.zig.zon`.
+- `tc_bc5_decompress_rgba8` with `snorm = 1` and `tc_bc7_decompress_rgbaf`
+  have no zig-bcn counterpart.
