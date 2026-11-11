@@ -523,7 +523,10 @@ pub fn partition(p: u32) *const [16]u8 {
 /// The texels of each partition's region 1.
 const part2_second = masks: {
     var masks: [32]@Vector(16, bool) = undefined;
-    for (&masks, &part2) |*m, *p| m.* = @as(@Vector(16, u8), p.*) != @as(@Vector(16, u8), @splat(0));
+    for (&masks, &part2) |*m, *p| {
+        const regions: @Vector(16, u8) = p.*;
+        m.* = regions != @as(@Vector(16, u8), @splat(0));
+    }
     break :masks masks;
 };
 

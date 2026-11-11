@@ -354,8 +354,9 @@ test "bc6h encodes and decodes every edge size and padded rows like texcomp" {
             // and the texels past the image must be left as they were.
             const row = (w + pad) * 3;
             const len_h = row * h;
-            fillSame(&rng, std.mem.sliceAsBytes(want_h[0..len_h]), std.mem.sliceAsBytes(got_h[0..len_h]));
-            const half_rc = tc_bc6h_decompress_rgb16f(&want, w, h, signed, row * 2, &want_h, len_h * 2);
+            fillSame(&rng, want_h[0..len_h], got_h[0..len_h]);
+            const half_rc =
+                tc_bc6h_decompress_rgb16f(&want, w, h, signed, row * 2, &want_h, len_h * 2);
             try std.testing.expectEqual(@as(c_int, 0), half_rc);
             bcn.bc6h.decodeImage(got[0..len], .{
                 .pixels = got_h[0..len_h],
@@ -368,8 +369,9 @@ test "bc6h encodes and decodes every edge size and padded rows like texcomp" {
 
             const row_f = (w + pad) * 4;
             const len_f = row_f * h;
-            fillSame(&rng, std.mem.sliceAsBytes(want_f[0..len_f]), std.mem.sliceAsBytes(got_f[0..len_f]));
-            const f32_rc = tc_bc6h_decompress_rgbaf(&want, w, h, signed, row_f * 4, &want_f, len_f * 4);
+            fillSame(&rng, want_f[0..len_f], got_f[0..len_f]);
+            const f32_rc =
+                tc_bc6h_decompress_rgbaf(&want, w, h, signed, row_f * 4, &want_f, len_f * 4);
             try std.testing.expectEqual(@as(c_int, 0), f32_rc);
             bcn.bc6h.decodeImageF32(got[0..len], .{
                 .pixels = got_f[0..len_f],
@@ -379,14 +381,15 @@ test "bc6h encodes and decodes every edge size and padded rows like texcomp" {
                 .channels = 4,
             }, format);
             const want_bytes = std.mem.sliceAsBytes(want_f[0..len_f]);
-            try std.testing.expectEqualSlices(u8, want_bytes, std.mem.sliceAsBytes(got_f[0..len_f]));
+            const got_bytes = std.mem.sliceAsBytes(got_f[0..len_f]);
+            try std.testing.expectEqualSlices(u8, want_bytes, got_bytes);
         }
     }
 }
 
-/// Fills `a` with random bytes and `b` with the same.
-fn fillSame(rng: *images.Rng, a: []u8, b: []u8) void {
-    for (a, b) |*x, *y| {
+/// Fills the bytes of `a` with random values and those of `b` with the same.
+fn fillSame(rng: *images.Rng, a: anytype, b: @TypeOf(a)) void {
+    for (std.mem.sliceAsBytes(a), std.mem.sliceAsBytes(b)) |*x, *y| {
         x.* = rng.byte();
         y.* = x.*;
     }

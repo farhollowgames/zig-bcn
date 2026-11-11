@@ -62,7 +62,7 @@ test "bc6h high blocks decode to their reported error and never lose to fast, on
     for (0..4000) |i| {
         const px = bc6h_test.fuzzBlock(&rng);
         for (formats) |format| checkBlock(&px, format) catch |err| {
-            std.debug.print("fuzz block {d} {t} (-Dfuzz-seed=0x{x}): {any}\n", .{
+            std.debug.print("fuzz block {d} {t} (-Dfuzz-seed={d}): {any}\n", .{
                 i,
                 format,
                 common.fuzz_seed,

@@ -81,8 +81,7 @@ test "the format-independent API matches each format, in bands and on threads" {
     }
     for (0..images.hdr_names.len) |index| {
         const img = images.hdr(index);
-        const floats: []const f32 = std.mem.bytesAsSlice(f32, std.mem.sliceAsBytes(&img.pixels));
-        const src: bcn.Source = .{ .float32 = bcn.Image(f32).init(floats, images.width, images.height, 3) };
+        const src: bcn.Source = .{ .float32 = common.hdrView(&img) };
         for (&hdr_encodings) |*e| try expectSameEverywhere(e, src, &rng);
     }
 }
@@ -153,8 +152,7 @@ test "parallel encoding gives the same bytes on 1, 2 and 8 threads" {
         }
         for ([_]usize{ 2, 5 }) |index| {
             const img = images.hdr(index);
-            const floats: []const f32 = std.mem.bytesAsSlice(f32, std.mem.sliceAsBytes(&img.pixels));
-            const src: bcn.Source = .{ .float32 = bcn.Image(f32).init(floats, images.width, images.height, 3) };
+            const src: bcn.Source = .{ .float32 = common.hdrView(&img) };
             for (&hdr) |*e| {
                 direct(e, src, &want);
                 @memset(&got, 0xaa);
@@ -167,7 +165,7 @@ test "parallel encoding gives the same bytes on 1, 2 and 8 threads" {
 
 test "decoding in row bands gives the image decoded whole" {
     var rng = common.rng(13);
-    errdefer std.debug.print("-Dfuzz-seed=0x{x}\n", .{common.fuzz_seed});
+    errdefer std.debug.print("-Dfuzz-seed={d}\n", .{common.fuzz_seed});
     var blocks: [max_len]u8 = undefined;
     for (&blocks) |*b| b.* = rng.byte();
     const total = bcn.image.blocksHigh(images.height);
@@ -197,14 +195,19 @@ test "decoding in row bands gives the image decoded whole" {
                 };
                 bcn.decodeImageRows(e, &blocks, banded, rows);
             }
-            try std.testing.expectEqualSlices(u8, std.mem.sliceAsBytes(&want), std.mem.sliceAsBytes(&got));
+            const want_bytes = std.mem.sliceAsBytes(&want);
+            try std.testing.expectEqualSlices(u8, want_bytes, std.mem.sliceAsBytes(&got));
         }
     }
 }
 
 /// A destination for `e` over `storage`: bytes, half floats or floats for
 /// BC6H by `round`, with a few channel counts.
-fn destination(e: *const bcn.Encoding, storage: *[images.pixel_count * 4]f32, round: usize) bcn.Destination {
+fn destination(
+    e: *const bcn.Encoding,
+    storage: *[images.pixel_count * 4]f32,
+    round: usize,
+) bcn.Destination {
     const w = images.width;
     const h = images.height;
     const bytes = std.mem.sliceAsBytes(storage);
@@ -238,25 +241,32 @@ test "encoders read images of fewer channels like the same pixels in RGBA" {
             d.* = .{ p[0], p[1], p[2], 255 };
         }
         const rgba = common.ldrView(&img);
+        const one_view = bcn.Image(u8).init(&one, w, h, 1);
+        const two_view = bcn.Image(u8).init(std.mem.sliceAsBytes(&two), w, h, 2);
+        const three_view = bcn.Image(u8).init(std.mem.sliceAsBytes(&three), w, h, 3);
+        const opaque_view = bcn.Image(u8).init(std.mem.sliceAsBytes(&opaque_rgba), w, h, 4);
 
         // BC4 reads channel 0 and BC5 channels 0 and 1, whatever follows.
-        bcn.bc4.encodeImage(rgba, want[0 .. max_len / 2]);
-        bcn.bc4.encodeImage(bcn.Image(u8).init(&one, w, h, 1), got[0 .. max_len / 2]);
-        try std.testing.expectEqualSlices(u8, want[0 .. max_len / 2], got[0 .. max_len / 2]);
-        bcn.bc4.encodeImage(bcn.Image(u8).init(std.mem.sliceAsBytes(&two), w, h, 2), got[0 .. max_len / 2]);
-        try std.testing.expectEqualSlices(u8, want[0 .. max_len / 2], got[0 .. max_len / 2]);
+        const half = max_len / 2;
+        bcn.bc4.encodeImage(rgba, want[0..half]);
+        bcn.bc4.encodeImage(one_view, got[0..half]);
+        try std.testing.expectEqualSlices(u8, want[0..half], got[0..half]);
+        bcn.bc4.encodeImage(two_view, got[0..half]);
+        try std.testing.expectEqualSlices(u8, want[0..half], got[0..half]);
         bcn.bc5.encodeImage(rgba, &want);
-        bcn.bc5.encodeImage(bcn.Image(u8).init(std.mem.sliceAsBytes(&two), w, h, 2), &got);
+        bcn.bc5.encodeImage(two_view, &got);
         try std.testing.expectEqualSlices(u8, &want, &got);
-        bcn.bc5.encodeImage(bcn.Image(u8).init(std.mem.sliceAsBytes(&three), w, h, 3), &got);
+        bcn.bc5.encodeImage(three_view, &got);
         try std.testing.expectEqualSlices(u8, &want, &got);
 
         // BC7 encodes RGB as opaque RGBA.
-        const rgb = bcn.Image(u8).init(std.mem.sliceAsBytes(&three), w, h, 3);
-        const opaque_view = bcn.Image(u8).init(std.mem.sliceAsBytes(&opaque_rgba), w, h, 4);
-        for ([_]bcn.bc7.Params{ bcn.bc7.Params.init(.ultrafast, true), bcn.bc7.Params.init(.basic, false) }) |params| {
+        const bc7_params = [_]bcn.bc7.Params{
+            bcn.bc7.Params.init(.ultrafast, true),
+            bcn.bc7.Params.init(.basic, false),
+        };
+        for (bc7_params) |params| {
             bcn.bc7.encodeImage(opaque_view, &want, &params);
-            bcn.bc7.encodeImage(rgb, &got, &params);
+            bcn.bc7.encodeImage(three_view, &got, &params);
             try std.testing.expectEqualSlices(u8, &want, &got);
         }
     }
@@ -267,14 +277,52 @@ test "encoders read images of fewer channels like the same pixels in RGBA" {
     for (0..images.hdr_names.len) |index| {
         const img = images.hdr(index);
         for (img.pixels, &rgba_f) |p, *q| q.* = .{ p[0], p[1], p[2], @floatFromInt(rng.byte()) };
-        const floats: []const f32 = std.mem.bytesAsSlice(f32, std.mem.sliceAsBytes(&img.pixels));
-        const rgb = bcn.Image(f32).init(floats, w, h, 3);
-        const rgba = bcn.Image(f32).init(std.mem.bytesAsSlice(f32, std.mem.sliceAsBytes(&rgba_f)), w, h, 4);
+        const rgb = common.hdrView(&img);
+        const rgba_floats = std.mem.bytesAsSlice(f32, std.mem.sliceAsBytes(&rgba_f));
+        const rgba = bcn.Image(f32).init(rgba_floats, w, h, 4);
         for ([_]bcn.bc6h.Format{ .unsigned, .signed }) |format| {
             for ([_]bcn.bc6h.Quality{ .fast, .high }) |quality| {
                 bcn.bc6h.encodeImageQuality(rgb, &want, format, quality);
                 bcn.bc6h.encodeImageQuality(rgba, &got, format, quality);
                 try std.testing.expectEqualSlices(u8, &want, &got);
+            }
+        }
+    }
+}
+
+test "encoders read a window of a larger image like a packed copy of it" {
+    const sizes = [_][4]u32{
+        // width, height, then the window's corner in the image
+        .{ 1, 1, 0, 0 },   .{ 3, 5, 7, 2 },    .{ 5, 2, 50, 40 },
+        .{ 13, 7, 9, 31 }, .{ 2, 17, 59, 30 }, .{ 8, 12, 4, 4 },
+    };
+    var packed_pixels: [images.pixel_count * 4]u8 = undefined;
+    var want: [max_len]u8 = undefined;
+    var got: [max_len]u8 = undefined;
+    for (0..images.ldr_names.len) |index| {
+        const img = images.ldr(index);
+        const bytes: []const u8 = std.mem.sliceAsBytes(&img.pixels);
+        for (sizes) |size| {
+            const w = size[0];
+            const h = size[1];
+            const at = (size[3] * images.width + size[2]) * 4;
+            const window: bcn.Image(u8) = .{
+                .pixels = bytes[at..],
+                .width = w,
+                .height = h,
+                .stride = images.width * 4,
+                .channels = 4,
+            };
+            for (0..h) |y| {
+                const row = bytes[at + y * images.width * 4 ..][0 .. w * 4];
+                @memcpy(packed_pixels[y * w * 4 ..][0 .. w * 4], row);
+            }
+            const packed_view = bcn.Image(u8).init(packed_pixels[0 .. w * h * 4], w, h, 4);
+            for (&ldr_encodings) |*e| {
+                const len = e.encodedLen(w, h);
+                direct(e, .{ .unorm8 = packed_view }, want[0..len]);
+                direct(e, .{ .unorm8 = window }, got[0..len]);
+                try std.testing.expectEqualSlices(u8, want[0..len], got[0..len]);
             }
         }
     }

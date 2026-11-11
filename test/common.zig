@@ -30,7 +30,7 @@ pub const Mismatches = struct {
 
     pub fn finish(self: Mismatches) !void {
         if (self.count == 0) return;
-        std.debug.print("{s}: {d} blocks differ (-Dfuzz-seed=0x{x})\n", .{
+        std.debug.print("{s}: {d} blocks differ (-Dfuzz-seed={d})\n", .{
             self.label,
             self.count,
             fuzz_seed,
@@ -42,6 +42,11 @@ pub const Mismatches = struct {
 pub fn ldrView(img: *const images.Ldr) bcn.Image(u8) {
     const bytes: []const u8 = std.mem.sliceAsBytes(&img.pixels);
     return bcn.Image(u8).init(bytes, images.width, images.height, 4);
+}
+
+pub fn hdrView(img: *const images.Hdr) bcn.Image(f32) {
+    const floats: []const f32 = std.mem.bytesAsSlice(f32, std.mem.sliceAsBytes(&img.pixels));
+    return bcn.Image(f32).init(floats, images.width, images.height, 3);
 }
 
 pub const blocks_wide = bcn.image.blocksWide(images.width);

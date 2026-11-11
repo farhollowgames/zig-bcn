@@ -14,7 +14,11 @@ pub fn build(b: *std.Build) void {
     // Debug, and ReleaseSafe keeps every assert and overflow check on.
     const test_optimize = b.option(std.lang.Optimize, "test-optimize", "Optimize mode for the tests (default ReleaseSafe)") orelse .safe;
     const test_filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match any filter") orelse &.{};
-    const fuzz_seed = b.option(u64, "fuzz-seed", "Offset every fuzz test's seed (default 0)") orelse 0;
+    const fuzz_seed = b.option(
+        u64,
+        "fuzz-seed",
+        "Offset every fuzz test's seed (default 0)",
+    ) orelse 0;
 
     const bcn_test_mod = b.createModule(.{
         .root_source_file = b.path("src/bcn.zig"),
@@ -29,7 +33,15 @@ pub fn build(b: *std.Build) void {
 
     // The original C and C++ encoders, built only for the differential tests.
     const reference = referenceLibrary(b, target, "bcn_reference", &.{});
-    const differential = differentialTest(b, target, test_optimize, bcn_test_mod, test_filters, fuzz_seed, false);
+    const differential = differentialTest(
+        b,
+        target,
+        test_optimize,
+        bcn_test_mod,
+        test_filters,
+        fuzz_seed,
+        false,
+    );
     differential.root_module.linkLibrary(reference);
     test_step.dependOn(&b.addRunArtifact(differential).step);
 
@@ -62,12 +74,20 @@ fn referenceLibrary(
     library.root_module.addCSourceFiles(.{
         .root = b.path("reference"),
         .files = &reference_c_files,
-        .flags = std.mem.concat(b.allocator, []const u8, &.{ &c_flags, extra_flags }) catch @panic("OOM"),
+        .flags = std.mem.concat(
+            b.allocator,
+            []const u8,
+            &.{ &c_flags, extra_flags },
+        ) catch @panic("OOM"),
     });
     library.root_module.addCSourceFiles(.{
         .root = b.path("reference"),
         .files = &reference_cpp_files,
-        .flags = std.mem.concat(b.allocator, []const u8, &.{ &cpp_flags, extra_flags }) catch @panic("OOM"),
+        .flags = std.mem.concat(
+            b.allocator,
+            []const u8,
+            &.{ &cpp_flags, extra_flags },
+        ) catch @panic("OOM"),
     });
     return library;
 }
@@ -213,7 +233,15 @@ fn addCoverage(
         }
     }
 
-    const differential = differentialTest(b, target, test_optimize, bcn_test_mod, test_filters, fuzz_seed, true);
+    const differential = differentialTest(
+        b,
+        target,
+        test_optimize,
+        bcn_test_mod,
+        test_filters,
+        fuzz_seed,
+        true,
+    );
     differential.root_module.addObjectFile(shared);
     differential.root_module.addRPath(shared.dirname());
 
