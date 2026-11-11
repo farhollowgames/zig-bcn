@@ -73,9 +73,9 @@ could perform in principle, and texcomp's int32 overflow is defined by
 | original | translated code covered | byte-identical on |
 | --- | --- | --- |
 | `stb_dxt.h` (BC1, BC3, BC4, BC5), both rounding builds | every function, line and branch | 14 images × 4 settings × 2 stb modes, 200,000 crafted blocks × 4 settings, varying alpha included |
-| texcomp BC1, BC3, BC4, BC5 decoders | every line and branch of the block decoders; the image decoders as declared below | 20,000 random blocks; random streams at five sizes with a wide stride |
+| texcomp BC1, BC3, BC4, BC5 decoders, BC4 and BC5 SNORM included | every line and branch of the block decoders; the image decoders and the SNORM conversion as declared below | 20,000 random blocks; random streams at five sizes with a wide stride; for SNORM, every endpoint pair, 50,000 random and edge blocks, and windows of a larger image |
 | `basisu_bc7e_scalar.cpp` (BC7) | every line and branch except assert failure branches, helpers the original never calls, and paths ruled out by their enclosing conditions, all declared below | 14 images × 7 levels × 2 metrics; 3,000 crafted blocks × 14 presets, the 2 base inits and 46 setting variants; the image set × 46 variants; single-mode on 390 crafted blocks × 5 settings, every mode, rotation, index selector and forced partition |
-| texcomp BC7 decoder | every line and branch except as declared below | 80,000 random blocks in every mode and the reserved one; 12,000 encoded blocks; 14 encoded images at 61 × 47 |
+| texcomp BC7 decoder, bytes and floats | every line and branch except as declared below | 80,000 random blocks in every mode and the reserved one; 12,000 encoded blocks; 14 encoded images at 61 × 47; for floats, 40,000 random blocks, every first byte, 8,000 encoded blocks, the images, and windows of a larger image |
 | texcomp BC6H encoder (`texcomp_bc6h.c`), including its SSE4.1 and AVX2 selector kernels | every function; 98.9% of lines and 94.2% of branches, the rest declared below | 8 HDR images × 2 formats × 3 kernels (AVX2, SSE4.1, scalar); every mode encoder called directly, block and error estimate, on 20,000 fuzz blocks and 868 coverage-guided fuzzing blocks × 3 kernels; all 2^32 floats through `tc_float_to_half_bits` |
 | texcomp BC6H decoder (`texcomp_bc6h_decode.c`) | every function; 99.4% of lines and 90.9% of branches, the rest declared below | every encoded image, half and float output; 200,000 random blocks per format, all 14 modes and the reserved codes; padded rows |
 
@@ -87,9 +87,10 @@ could perform in principle, and texcomp's int32 overflow is defined by
   branches each are the argument checks (null pointers, zero size, short
   stride or buffer), which return an error. The Zig decoders take slices and
   assert these conditions instead, so there is no error path to compare.
-- `tc_bc5_decompress_rgba8`: the same argument checks (1 line, 6 branches),
-  plus the BC5 SNORM path (8 lines, 3 branches). stb_dxt encodes BC4 and BC5
-  as UNORM only, and zig-bcn offers what it ports.
+- `tc_bc5_decompress_rgba8`: the same argument checks (1 line, 6 branches).
+- `tc_snorm8_to_unorm8`: its three clamps (3 branches). Its only caller
+  passes values `tc_decode_bc4_block_snorm` has already clamped to -127 to
+  127, which convert to 0 to 255.
 
 ### BC7: basisu_bc7e_scalar.cpp
 
@@ -147,6 +148,10 @@ exact count. What the counts are made of:
 
 - `tc_bc7_decompress_rgba8`: the argument checks (1 line, 6 branches), as
   for the other texcomp image decoders.
+- `tc_bc7_decompress_rgbaf`: its argument checks (1 line, 5 branches), the
+  failure of its allocation (1 branch), and the failure of its call to
+  `tc_bc7_decompress_rgba8` (1 branch), whose checks its own rule out. The
+  port allocates nothing.
 - `tc_bc7_dec_rb`: the branch for reads of 32 bits or more; BC7 fields are
   at most 8 bits.
 

@@ -107,6 +107,15 @@ test "the format-independent decoders match each format's" {
         bcn.decodeImage(e, &blocks, .{ .unorm8 = bcn.ImageMut(u8).init(&got, images.width, images.height, 4) });
         try std.testing.expectEqualSlices(u8, &want, &got);
     }
+    var want_rgba_f32: [images.pixel_count * 4]f32 = undefined;
+    var got_rgba_f32: [images.pixel_count * 4]f32 = undefined;
+    const w = images.width;
+    const h = images.height;
+    const bc7_encoding: bcn.Encoding = .{ .bc7 = bcn.bc7.Params.init(.basic, true) };
+    bcn.bc7.decodeImageF32(&blocks, .init(&want_rgba_f32, w, h, 4));
+    bcn.decodeImage(&bc7_encoding, &blocks, .{ .float32 = .init(&got_rgba_f32, w, h, 4) });
+    const want_rgba_bytes = std.mem.sliceAsBytes(&want_rgba_f32);
+    try std.testing.expectEqualSlices(u8, want_rgba_bytes, std.mem.sliceAsBytes(&got_rgba_f32));
     var want_half: [images.pixel_count * 3]u16 = undefined;
     var got_half: [images.pixel_count * 3]u16 = undefined;
     var want_f32: [images.pixel_count * 3]f32 = undefined;
@@ -219,8 +228,89 @@ fn destination(
         },
         .bc4 => .{ .unorm8 = bcn.ImageMut(u8).init(bytes, w, h, @intCast(1 + round)) },
         .bc5 => .{ .unorm8 = bcn.ImageMut(u8).init(bytes, w, h, @intCast(2 + round % 2)) },
+        .bc7 => switch (round % 3) {
+            0 => .{ .unorm8 = bcn.ImageMut(u8).init(bytes, w, h, 4) },
+            1 => .{ .float32 = bcn.ImageMut(f32).init(storage, w, h, 4) },
+            else => .{ .float32 = bcn.ImageMut(f32).init(storage, w, h, 3) },
+        },
         else => .{ .unorm8 = bcn.ImageMut(u8).init(bytes, w, h, 4) },
     };
+}
+
+/// A decoder that runs in row bands: a format through `bcn.decodeImageRows`,
+/// or BC5 SNORM, which has no `bcn.Encoding`.
+const BandDecoder = union(enum) {
+    format: *const bcn.Encoding,
+    bc5_snorm,
+
+    fn destinationIn(
+        decoder: BandDecoder,
+        storage: *[images.pixel_count * 4]f32,
+        round: usize,
+    ) bcn.Destination {
+        return switch (decoder) {
+            .format => |e| destination(e, storage, round),
+            .bc5_snorm => .{ .unorm8 = bcn.ImageMut(u8).init(
+                std.mem.sliceAsBytes(storage),
+                images.width,
+                images.height,
+                @intCast(2 + round % 3),
+            ) },
+        };
+    }
+
+    fn decodeRows(
+        decoder: BandDecoder,
+        blocks: []const u8,
+        dst: bcn.Destination,
+        rows: bcn.BlockRows,
+    ) void {
+        switch (decoder) {
+            .format => |e| bcn.decodeImageRows(e, blocks, dst, rows),
+            .bc5_snorm => bcn.bc5.decodeImageSnormRows(blocks, dst.unorm8, rows),
+        }
+    }
+};
+
+test "decoding one block row per task on 1, 2 and 8 threads gives the image decoded whole" {
+    // No worker threads runs every task on the caller.
+    const limits = [_]std.Io.Limit{ .nothing, .limited(1), .limited(7) };
+    var rng = common.rng(15);
+    errdefer std.debug.print("-Dfuzz-seed={d}\n", .{common.fuzz_seed});
+    var blocks: [max_len]u8 = undefined;
+    for (&blocks) |*b| b.* = rng.byte();
+    const stream: []const u8 = &blocks;
+    var decoders: [ldr_encodings.len + hdr_encodings.len + 1]BandDecoder = undefined;
+    for (decoders[0..ldr_encodings.len], &ldr_encodings) |*d, *e| d.* = .{ .format = e };
+    for (decoders[ldr_encodings.len..][0..hdr_encodings.len], &hdr_encodings) |*d, *e| {
+        d.* = .{ .format = e };
+    }
+    decoders[decoders.len - 1] = .bc5_snorm;
+    var want: [images.pixel_count * 4]f32 = undefined;
+    var got: [images.pixel_count * 4]f32 = undefined;
+    const total = bcn.image.blocksHigh(images.height);
+    for (limits) |limit| {
+        var threaded: std.Io.Threaded = .init(std.testing.allocator, .{ .async_limit = limit });
+        defer threaded.deinit();
+        const io = threaded.io();
+        for (decoders) |decoder| for (0..3) |round| {
+            const fill: u8 = @intCast(round * 0x55);
+            @memset(std.mem.sliceAsBytes(&want), fill);
+            @memset(std.mem.sliceAsBytes(&got), fill);
+            const whole = decoder.destinationIn(&want, round);
+            decoder.decodeRows(stream, whole, .all(images.height));
+            const banded = decoder.destinationIn(&got, round);
+            var group: std.Io.Group = .init;
+            defer group.cancel(io);
+            for (0..total) |first| {
+                const rows: bcn.BlockRows = .{ .first = @intCast(first), .count = 1 };
+                group.async(io, BandDecoder.decodeRows, .{ decoder, stream, banded, rows });
+            }
+            try group.await(io);
+            const want_bytes = std.mem.sliceAsBytes(&want);
+            try std.testing.expectEqualSlices(u8, want_bytes, std.mem.sliceAsBytes(&got));
+        };
+    }
 }
 
 test "encoders read images of fewer channels like the same pixels in RGBA" {

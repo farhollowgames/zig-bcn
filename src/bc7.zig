@@ -92,6 +92,35 @@ pub fn decodeImageRows(src: []const u8, dst: image.ImageMut(u8), rows: image.Blo
     }.f);
 }
 
+/// Decodes to floats from 0 to 1 (`decodeBlockF32`), into an RGBA image, or
+/// an RGB one that leaves alpha out, of the same size the data was encoded
+/// from.
+pub fn decodeImageF32(src: []const u8, dst: image.ImageMut(f32)) void {
+    decodeImageF32Rows(src, dst, image.BlockRows.all(dst.height));
+}
+
+/// `decodeImageF32` for the block rows `rows` only; see `image.BlockRows`.
+pub fn decodeImageF32Rows(
+    src: []const u8,
+    dst: image.ImageMut(f32),
+    rows: image.BlockRows,
+) void {
+    dst.check();
+    assert(dst.channels == 3 or dst.channels == 4);
+    image.decodeBlocks(block_bytes, dst.width, dst.height, src, rows, dst, struct {
+        fn f(out: image.ImageMut(f32), block: *const [block_bytes]u8, bx: u32, by: u32) void {
+            const rgba = decodeBlockF32(block);
+            if (out.channels == 4) {
+                out.putBlock(4, bx, by, &rgba);
+            } else {
+                var rgb: [16][3]f32 = undefined;
+                for (rgba, &rgb) |p, *q| q.* = p[0..3].*;
+                out.putBlock(3, bx, by, &rgb);
+            }
+        }
+    }.f);
+}
+
 const ModeInfo = struct {
     subsets: u8,
     partition_bits: u8,
@@ -193,15 +222,24 @@ comptime {
 /// Decodes to RGBA. A block with no mode bit set in its first byte is
 /// reserved and decodes to transparent black, as the D3D11 spec requires.
 pub fn decodeBlock(block: *const [block_bytes]u8) [16][4]u8 {
+    return decodeBlockAs(u8, block);
+}
+
+/// Decodes to RGBA floats, each byte `decodeBlock` gives divided by 255.
+pub fn decodeBlockF32(block: *const [block_bytes]u8) [16][4]f32 {
+    return decodeBlockAs(f32, block);
+}
+
+fn decodeBlockAs(comptime T: type, block: *const [block_bytes]u8) [16][4]T {
     if (block[0] == 0) return @splat(.{ 0, 0, 0, 0 });
     // One decoder per mode, so each reads its fields in straight lines.
     return switch (@ctz(block[0])) {
-        inline 0...modes.len - 1 => |mode| decodeMode(mode, block),
+        inline 0...modes.len - 1 => |mode| decodeMode(T, mode, block),
         else => unreachable,
     };
 }
 
-fn decodeMode(comptime mode: u32, block: *const [block_bytes]u8) [16][4]u8 {
+fn decodeMode(comptime T: type, comptime mode: u32, block: *const [block_bytes]u8) [16][4]T {
     var r: BitReader = .{ .bits = std.mem.readInt(u128, block, .little) };
     _ = r.read(mode + 1);
     const info = modes[mode];
@@ -287,9 +325,13 @@ fn decodeMode(comptime mode: u32, block: *const [block_bytes]u8) [16][4]u8 {
         channel.* = sum >> @splat(6);
     }
     if (rotation != 0) std.mem.swap(Lanes, &channels[3], &channels[rotation - 1]);
-    var planes: [4][16]u8 = undefined;
-    for (&planes, channels) |*plane, channel| plane.* = @as(@Vector(16, u8), @intCast(channel));
-    var out: [16][4]u8 = undefined;
+    var planes: [4][16]T = undefined;
+    for (&planes, channels) |*plane, channel| plane.* = switch (T) {
+        u8 => @as(@Vector(16, u8), @intCast(channel)),
+        f32 => @as(@Vector(16, f32), @floatFromInt(channel)) / @as(@Vector(16, f32), @splat(255)),
+        else => comptime unreachable,
+    };
+    var out: [16][4]T = undefined;
     for (&out, planes[0], planes[1], planes[2], planes[3]) |*p, red, green, blue, alpha| {
         p.* = .{ red, green, blue, alpha };
     }

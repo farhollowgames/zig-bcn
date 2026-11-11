@@ -13,14 +13,15 @@
 stb/stb_dxt.h *
 
 # texcomp's decoders, the oracle for the Zig decoders. The image decoders
-# keep argument checks the port asserts instead, and BC5 has a SNORM path
-# the port does not offer (doc/coverage.md).
+# keep argument checks the port asserts instead (doc/coverage.md).
 texcomp/src/texcomp_bc1.c tc_decode_bc1_color_block
 texcomp/src/texcomp_bc1.c texcomp_bc1.c:tc_rgb565_unpack
 texcomp/src/texcomp_bc1.c tc_bc1_decompress_rgba8 1 6
 texcomp/src/texcomp_bc3.c tc_bc3_decompress_rgba8 1 6
 texcomp/src/texcomp_bc5.c tc_decode_bc4_block
-texcomp/src/texcomp_bc5.c tc_bc5_decompress_rgba8 9 9
+texcomp/src/texcomp_bc5.c tc_decode_bc4_block_snorm
+texcomp/src/texcomp_bc5.c texcomp_bc5.c:tc_snorm8_to_unorm8 0 3
+texcomp/src/texcomp_bc5.c tc_bc5_decompress_rgba8 1 6
 
 # bc7e scalar: every function, except as declared below (doc/coverage.md, BC7).
 bc7e/basisu_bc7e_scalar.cpp *
@@ -71,6 +72,7 @@ bc7e/basisu_bc7e_scalar.cpp basisu_bc7e_scalar.cpp:_ZL3maxIhET_S0_S0_ 1 0
 # of the image decoder, and the bit reader's 32-bit case (reads are at most
 # 8 bits).
 texcomp/src/texcomp_bc7.c tc_bc7_decompress_rgba8 1 6
+texcomp/src/texcomp_bc7.c tc_bc7_decompress_rgbaf 1 7
 texcomp/src/texcomp_bc7.c texcomp_bc7.c:tc_bc7_decode_block
 texcomp/src/texcomp_bc7.c texcomp_bc7.c:tc_bc7_dec_rb 0 1
 texcomp/src/texcomp_bc7.c texcomp_bc7.c:tc_bc7_dec_interp

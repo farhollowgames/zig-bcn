@@ -104,8 +104,8 @@ pub const Source = union(enum) {
     }
 };
 
-/// Where to decode to: bytes for BC1 to BC5 and BC7; half-float bits or
-/// floats for BC6H.
+/// Where to decode to: bytes for BC1 to BC5 and BC7; floats for BC7 too;
+/// half-float bits or floats for BC6H.
 pub const Destination = union(enum) {
     unorm8: image.ImageMut(u8),
     half: image.ImageMut(u16),
@@ -175,7 +175,11 @@ pub fn decodeImageRows(encoding: *const Encoding, src: []const u8, dst: Destinat
             .float32 => |d| bc6h.decodeImageF32Rows(src, d, o.format, rows),
             .unorm8 => unreachable, // BC6H decodes to half floats or floats
         },
-        .bc7 => bc7.decodeImageRows(src, dst.unorm8, rows),
+        .bc7 => switch (dst) {
+            .unorm8 => |d| bc7.decodeImageRows(src, d, rows),
+            .float32 => |d| bc7.decodeImageF32Rows(src, d, rows),
+            .half => unreachable, // BC7 decodes to bytes or floats
+        },
     }
 }
 

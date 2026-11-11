@@ -15,6 +15,14 @@ extern fn ref_bc7e_params_init(level: c_uint, perceptual: c_int, out: *anyopaque
 extern fn ref_bc7e_compress_blocks(num_blocks: c_uint, blocks: [*]u64, pixels: [*]const u32, params: *const anyopaque, used_lut: ?[*]u8) void;
 extern fn ref_bc7e_compress_block_single_mode(block: *[2]u64, pixels: [*]const u32, params: *const anyopaque, mode: c_uint, partition: c_int, rotation: c_uint, index_selector: c_uint) u64;
 extern fn tc_bc7_decompress_rgba8(bc7_data: [*]const u8, width: u32, height: u32, stride: usize, out_rgba: [*]u8, out_size: usize) c_int;
+extern fn tc_bc7_decompress_rgbaf(
+    bc7_data: [*]const u8,
+    width: u32,
+    height: u32,
+    stride_bytes: usize,
+    out_rgba: [*]f32,
+    out_size: usize,
+) c_int;
 
 const levels = std.enums.values(bc7.Level);
 
@@ -484,4 +492,128 @@ test "bc7 image decode matches texcomp and round-trips within the format error" 
 
 comptime {
     std.debug.assert(bc7_rmse_max.len == images.ldr_names.len);
+}
+
+fn tcDecodeF32(block: *const [16]u8) [16][4]f32 {
+    var out: [16][4]f32 = undefined;
+    const r = tc_bc7_decompress_rgbaf(block, 4, 4, 64, @ptrCast(&out), @sizeOf(@TypeOf(out)));
+    std.debug.assert(r == 0);
+    return out;
+}
+
+test "bc7 decodes to floats like texcomp, bit for bit, in every mode" {
+    ref_bc7e_init();
+    var m: common.Mismatches = .{ .label = "bc7 decode f32" };
+    var rng = common.rng(0xbc7f);
+    // Random blocks: each mode in turn, the reserved mode, and first bytes
+    // with several mode bits set, where the lowest one wins.
+    for (0..40_000) |i| {
+        var block: [16]u8 = undefined;
+        for (&block) |*b| b.* = rng.byte();
+        const kind: u32 = @intCast(i % 10);
+        if (kind < 8) {
+            const mode: u3 = @intCast(kind);
+            const low_bits: u8 = @truncate((@as(u16, 2) << mode) - 1);
+            block[0] = (block[0] & ~low_bits) | (@as(u8, 1) << mode);
+        } else if (kind == 8) {
+            block[0] = 0;
+        }
+        const want = tcDecodeF32(&block);
+        const got = bc7.decodeBlockF32(&block);
+        m.check("random", @intCast(i), kind, block, std.mem.asBytes(&want), std.mem.asBytes(&got));
+    }
+    // Every first byte, the reserved 0 included.
+    for (0..256) |first| {
+        var block: [16]u8 = undefined;
+        for (&block) |*b| b.* = rng.byte();
+        block[0] = @intCast(first);
+        const want = std.mem.toBytes(tcDecodeF32(&block));
+        const got = std.mem.toBytes(bc7.decodeBlockF32(&block));
+        m.check("first byte", @intCast(first), 0, block, &want, &got);
+    }
+    // Encoder output.
+    const blocks = craftedBlocks(2000, 6);
+    for ([_]bc7.Level{ .ultrafast, .slowest }) |level| for ([_]bool{ false, true }) |perceptual| {
+        const params = Params.init(level, perceptual);
+        for (&blocks, 0..) |*px, i| {
+            const block = bc7.encodeBlock(px, &params);
+            const want = std.mem.toBytes(tcDecodeF32(&block));
+            const got = std.mem.toBytes(bc7.decodeBlockF32(&block));
+            m.check("encoded", @intCast(i), 0, block, &want, &got);
+        }
+    };
+    try m.finish();
+}
+
+test "bc7 float decode matches texcomp on the encoded image set" {
+    ref_bc7e_init();
+    var encoded: [bcn.encodedLen(16, images.width, images.height)]u8 = undefined;
+    var want: [images.pixel_count][4]f32 = undefined;
+    var got: [images.pixel_count][4]f32 = undefined;
+    var m: common.Mismatches = .{ .label = "bc7 float image set" };
+    const w = images.width;
+    const h = images.height;
+    for (0..images.ldr_names.len) |index| {
+        const img = images.ldr(index);
+        const params = Params.init(.basic, true);
+        bc7.encodeImage(common.ldrView(&img), &encoded, &params);
+        const want_floats = std.mem.bytesAsSlice(f32, std.mem.sliceAsBytes(&want));
+        const rc = tc_bc7_decompress_rgbaf(&encoded, w, h, w * 16, want_floats.ptr, w * h * 16);
+        try std.testing.expectEqual(@as(c_int, 0), rc);
+        const got_floats = std.mem.bytesAsSlice(f32, std.mem.sliceAsBytes(&got));
+        bc7.decodeImageF32(&encoded, .init(got_floats, w, h, 4));
+        const want_bytes = std.mem.sliceAsBytes(&want);
+        m.check(img.name, 0, 0, @as(u8, 0), want_bytes, std.mem.sliceAsBytes(&got));
+    }
+    try m.finish();
+}
+
+test "bc7 float image decode matches texcomp in windows of a larger image, RGB and RGBA" {
+    // width, height, then the window's corner in the image
+    const windows = [_][4]u32{
+        .{ 1, 1, 0, 0 },                        .{ 3, 5, 7, 2 },    .{ 5, 2, 50, 40 },
+        .{ 13, 7, 9, 31 },                      .{ 2, 17, 59, 30 }, .{ 8, 12, 4, 4 },
+        .{ images.width, images.height, 0, 0 },
+    };
+    var rng = common.rng(0xbc7e);
+    var data: [bcn.encodedLen(16, images.width, images.height)]u8 = undefined;
+    var packed_rgba: [images.pixel_count][4]f32 = undefined;
+    var want: [images.pixel_count * 4]f32 = undefined;
+    var got: [want.len]f32 = undefined;
+    for (windows) |window| for (3..5) |channels| {
+        const w = window[0];
+        const h = window[1];
+        const stride = images.width * @as(u32, @intCast(channels));
+        const at = window[3] * stride + window[2] * channels;
+        // Random blocks reach every mode and the reserved one. Both images
+        // start from the same random bytes, which the decoders must leave
+        // alone outside the window.
+        for (&data) |*b| b.* = rng.byte();
+        for (std.mem.sliceAsBytes(&want), std.mem.sliceAsBytes(&got)) |*a, *b| {
+            a.* = rng.byte();
+            b.* = a.*;
+        }
+        if (channels == 4) {
+            // texcomp writes RGBA rows `stride_bytes` apart, straight into the window.
+            const out = want[at..];
+            const rc = tc_bc7_decompress_rgbaf(&data, w, h, stride * 4, out.ptr, out.len * 4);
+            try std.testing.expectEqual(@as(c_int, 0), rc);
+        } else {
+            const out = std.mem.bytesAsSlice(f32, std.mem.sliceAsBytes(packed_rgba[0 .. w * h]));
+            const rc = tc_bc7_decompress_rgbaf(&data, w, h, w * 16, out.ptr, w * h * 16);
+            try std.testing.expectEqual(@as(c_int, 0), rc);
+            for (0..h) |y| for (0..w) |x| {
+                want[at + y * stride + x * 3 ..][0..3].* = packed_rgba[y * w + x][0..3].*;
+            };
+        }
+        bc7.decodeImageF32(&data, .{
+            .pixels = got[at..],
+            .width = w,
+            .height = h,
+            .stride = stride,
+            .channels = @intCast(channels),
+        });
+        const want_bytes = std.mem.sliceAsBytes(&want);
+        try std.testing.expectEqualSlices(u8, want_bytes, std.mem.sliceAsBytes(&got));
+    };
 }
