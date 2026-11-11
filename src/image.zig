@@ -95,7 +95,7 @@ pub fn ImageMut(comptime T: type) type {
 
 pub fn blocksWide(width: u32) u32 {
     assert(width > 0);
-    return (width + 3) / 4;
+    return (width - 1) / 4 + 1;
 }
 
 pub fn blocksHigh(height: u32) u32 {
@@ -174,6 +174,13 @@ pub fn decodeBlocks(
         }
     }
     assert(at == (rows.first + rows.count) * row_bytes);
+}
+
+test "blocks round up for every width" {
+    // The widths whose rounding up passes maxInt(u32).
+    try std.testing.expectEqual(@as(u32, 1 << 30), blocksWide(std.math.maxInt(u32)));
+    try std.testing.expectEqual(@as(u32, 1 << 30), blocksWide(std.math.maxInt(u32) - 2));
+    try std.testing.expectEqual(@as(u32, (1 << 30) - 1), blocksWide(std.math.maxInt(u32) - 3));
 }
 
 test "blocks round up and clamp at the edges" {
