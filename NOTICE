@@ -8,40 +8,72 @@ algorithms and arithmetic so that they produce the same bytes, and change
 only the language, the structure needed to express it in Zig, and the
 public interface.
 
+zig-bcn is not affiliated with or reviewed by the authors of these works.
+The notices below are copied from the originals as they are.
+
 -------------------------------------------------------------------------------
 BC7 encoder (src/bc7e.zig)
 
 Translated from basis_universal encoder/basisu_bc7e_scalar.cpp, the scalar
-port of bc7e.ispc, https://github.com/BinomialLLC/basis_universal (tag v2_50).
+port of bc7e.ispc, https://github.com/BinomialLLC/basis_universal (tag v2_50),
+licensed under the Apache License, Version 2.0.
 
-    Copyright 2018-2026 Binomial LLC
-    Licensed under the Apache License, Version 2.0.
+From basisu_bc7e_scalar.cpp:
+
+    bc7e.ispc - Fast high quality SIMD BC7 encoder
+    Copyright (C) 2018-2020 Binomial LLC, All rights reserved. Apache 2.0 license - see LICENSE.
+
+From basis_universal's LICENSE:
+
+    Copyright 2019-2026 Binomial LLC
+
+basis_universal's NOTICE, whose attribution notices the Apache License 2.0
+(section 4(d)) asks derivative works to include:
+
+    Basis Universal™ Supercompressed GPU Texture Compression Library
+
+    Copyright © 2016–2026 Binomial LLC.
+    All rights reserved except as granted under the Apache 2.0 license
+    (https://github.com/BinomialLLC/basis_universal/blob/master/LICENSE).
+    "Basis Universal" is a trademark of Binomial LLC.
+
+The full NOTICE is in reference/bc7e/NOTICE.
 
 -------------------------------------------------------------------------------
 BC6H encoder (src/texcomp_bc6h.zig)
 
 Translated from TinyEXR tools/texcomp/src/texcomp_bc6h.c,
-https://github.com/syoyo/tinyexr (commit 644148d).
+https://github.com/syoyo/tinyexr (commit 644148d), licensed under the Apache
+License, Version 2.0.
+
+From texcomp_bc6h.c and texcomp's NOTICE.md:
 
     Copyright 2014-2026 Syoyo Fujita and TinyEXR authors
     SPDX-License-Identifier: Apache-2.0
 
-texcomp_bc6h.c in turn mirrors the BC6H two-region partition table and
-block bit layout of bcdec.h:
+texcomp_bc6h.c in turn mirrors the BC6H two-region (mode 9) partition table
+and block bit layout of bcdec.h, https://github.com/iOrange/bcdec, which is
+available under the MIT License or the Unlicense. Its MIT License:
 
-    Copyright (c) 2022 Sergii Kudlai, https://github.com/iOrange/bcdec
-    Licensed under the MIT License (dual-licensed MIT / Unlicense).
+    Copyright (c) 2022 Sergii Kudlai
 
-    Permission is hereby granted, free of charge, to any person obtaining a
-    copy of this software and associated documentation files (the
-    "Software"), to deal in the Software without restriction, including
-    without limitation the rights to use, copy, modify, merge, publish,
-    distribute, sublicense, and/or sell copies of the Software, and to permit
-    persons to whom the Software is furnished to do so, subject to the
-    following conditions: The above copyright notice and this permission
-    notice shall be included in all copies or substantial portions of the
-    Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-    EXPRESS OR IMPLIED.
+    Permission is hereby granted, free of charge, to any person obtaining a copy of
+    this software and associated documentation files (the "Software"), to deal in
+    the Software without restriction, including without limitation the rights to
+    use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+    of the Software, and to permit persons to whom the Software is furnished to do
+    so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
 
 -------------------------------------------------------------------------------
 BC1, BC3, BC4 and BC5 encoders (src/stb_dxt.zig)
@@ -49,24 +81,30 @@ BC1, BC3, BC4 and BC5 encoders (src/stb_dxt.zig)
 Translated from stb_dxt.h v1.12, https://github.com/nothings/stb
 (commit 2c980bb), by Fabian "ryg" Giesen, ported to C by Sean Barrett, with
 contributions by Rich Geldreich, Kevin Schmidt, ppiastucki, Ignacio Castano
-and Alan Hickman. Used under its MIT licence option:
+and Alan Hickman. stb_dxt.h is available under the MIT License or in the
+public domain; zig-bcn uses it under the MIT License (its Alternative A):
 
+    MIT License
     Copyright (c) 2017 Sean Barrett
-
-    Permission is hereby granted, free of charge, to any person obtaining a
-    copy of this software and associated documentation files (the
-    "Software"), to deal in the Software without restriction, including
-    without limitation the rights to use, copy, modify, merge, publish,
-    distribute, sublicense, and/or sell copies of the Software, and to permit
-    persons to whom the Software is furnished to do so, subject to the
-    following conditions: The above copyright notice and this permission
-    notice shall be included in all copies or substantial portions of the
-    Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-    EXPRESS OR IMPLIED.
+    Permission is hereby granted, free of charge, to any person obtaining a copy of
+    this software and associated documentation files (the "Software"), to deal in
+    the Software without restriction, including without limitation the rights to
+    use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+    of the Software, and to permit persons to whom the Software is furnished to do
+    so, subject to the following conditions:
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
 
 -------------------------------------------------------------------------------
 Test-only reference sources (reference/)
 
 The differential tests build the original C and C++ files above from
-reference/, unmodified, with their own licence files. They are never part of
-the library or its package.
+reference/, unmodified, with their own licence and notice files. They are
+never part of the library or its package.

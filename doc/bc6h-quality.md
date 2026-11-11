@@ -48,8 +48,9 @@ asakusa.exr, the representative case:
 | signed | **zig-bcn `.high`** | **0.0120** | **45.94** | **0.49** |
 
 zig-bcn's `.fast` writes texcomp's bytes and runs its selector search on
-vectors. It was not timed on this photograph; the README's benchmark times
-it against texcomp, built for the same CPU, on the test image set.
+vectors. It was not timed on this photograph; the benchmark in
+[`BENCHMARKS.md`](BENCHMARKS.md) times it against texcomp, built for the
+same CPU, on the test image set.
 
 The synthetic images, mPSNR in dB, unsigned (signed in brackets where it
 differs by more than a few tenths):

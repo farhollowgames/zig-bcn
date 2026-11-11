@@ -8,7 +8,7 @@ originals, with its state:
 - **oracle-tested**: the original runs on the same inputs in `zig build test`
   and every output byte and returned value matches;
 - **benchmarked**: oracle-tested, and timed against the original by
-  `zig build bench` (the README has the table);
+  `zig build bench` (see `doc/BENCHMARKS.md`);
 - **reviewed**: benchmarked, through the performance pass, the skeptic and
   the fixes, and released.
 
