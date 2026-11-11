@@ -129,7 +129,41 @@ const BitReader = struct {
         self.used += n;
         return v;
     }
+
+    /// Reads 16 indices of `bits` each, one bit fewer at each of `anchors`
+    /// (16 for none), as one lane per pixel.
+    fn indices(self: *BitReader, bits: u32, anchors: [3]u32) @Vector(16, u32) {
+        const Lanes = @Vector(16, u32);
+        const zeros: Lanes = @splat(0);
+        const ones: Lanes = @splat(1);
+        const lane = std.simd.iota(u32, 16);
+        var start = lane * @as(Lanes, @splat(bits));
+        var width: Lanes = @splat(bits);
+        var total = 16 * bits;
+        for (anchors) |anchor| {
+            const at: Lanes = @splat(anchor);
+            start -= @select(u32, lane > at, ones, zeros);
+            width -= @select(u32, lane == at, ones, zeros);
+            if (anchor < 16) total -= 1;
+        }
+        assert(total <= 64 and self.used + total <= 128);
+        const one_bit: @Vector(16, u64) = @splat(1);
+        const field: @Vector(16, u64) = @splat(@truncate(self.bits));
+        const mask = (one_bit << @intCast(width)) - one_bit;
+        const index = (field >> @intCast(start)) & mask;
+        self.bits >>= @intCast(total);
+        self.used += total;
+        return @intCast(index);
+    }
 };
+
+/// Each lane's weight from `table`.
+fn weights(table: []const u32, index: @Vector(16, u32)) @Vector(16, u32) {
+    const at: [16]u32 = index;
+    var out: [16]u32 = undefined;
+    for (&out, at) |*w, i| w.* = table[i];
+    return out;
+}
 
 fn weightTable(bits: u32) []const u32 {
     return switch (bits) {
@@ -140,11 +174,6 @@ fn weightTable(bits: u32) []const u32 {
     };
 }
 
-fn interpolate(a: u32, b: u32, w: u32) u8 {
-    assert(a <= 255 and b <= 255 and w <= 64);
-    return @intCast((a * (64 - w) + b * w + 32) >> 6);
-}
-
 /// Expands a `bits`-wide value to 8 bits by replicating its top bits.
 fn expand(v: u32, bits: u32) u32 {
     assert(bits >= 4 and bits <= 8 and v < (@as(u32, 1) << @intCast(bits)));
@@ -152,14 +181,28 @@ fn expand(v: u32, bits: u32) u32 {
     return shifted | (shifted >> @intCast(bits));
 }
 
+// The index reader counts each anchor once, so a block's anchors must be
+// different pixels; the first is always pixel 0.
+comptime {
+    for (bc7e.anchor_second_subset) |a| assert(a != 0 and a < 16);
+    for (bc7e.anchor_third_subset_1, bc7e.anchor_third_subset_2) |a, b| {
+        assert(a != 0 and b != 0 and a != b and a < 16 and b < 16);
+    }
+}
+
 /// Decodes to RGBA. A block with no mode bit set in its first byte is
 /// reserved and decodes to transparent black, as the D3D11 spec requires.
 pub fn decodeBlock(block: *const [block_bytes]u8) [16][4]u8 {
-    var r: BitReader = .{ .bits = std.mem.readInt(u128, block, .little) };
     if (block[0] == 0) return @splat(.{ 0, 0, 0, 0 });
+    // One decoder per mode, so each reads its fields in straight lines.
+    return switch (@ctz(block[0])) {
+        inline 0...modes.len - 1 => |mode| decodeMode(mode, block),
+        else => unreachable,
+    };
+}
 
-    const mode: u32 = @ctz(block[0]);
-    assert(mode < 8);
+fn decodeMode(comptime mode: u32, block: *const [block_bytes]u8) [16][4]u8 {
+    var r: BitReader = .{ .bits = std.mem.readInt(u128, block, .little) };
     _ = r.read(mode + 1);
     const info = modes[mode];
 
@@ -217,36 +260,38 @@ pub fn decodeBlock(block: *const [block_bytes]u8) [16][4]u8 {
         else => assert(info.subsets == 1),
     }
 
-    var index: [16]u32 = undefined;
-    for (&index, 0..) |*v, i| {
-        const anchor = i == anchors[0] or i == anchors[1] or i == anchors[2];
-        v.* = r.read(info.index_bits - @intFromBool(anchor));
-    }
-    var index2: [16]u32 = @splat(0);
+    const index = r.indices(info.index_bits, anchors);
+    var color_weights = weights(weightTable(info.index_bits), index);
+    var alpha_weights = color_weights;
     if (info.index2_bits > 0) {
-        for (&index2, 0..) |*v, i| v.* = r.read(info.index2_bits - @intFromBool(i == 0));
+        const index2 = r.indices(info.index2_bits, .{ 0, 16, 16 });
+        alpha_weights = weights(weightTable(info.index2_bits), index2);
+        if (index_selection == 1) std.mem.swap(@Vector(16, u32), &color_weights, &alpha_weights);
     }
     assert(r.used == 128);
 
-    var out: [16][4]u8 = undefined;
-    for (&out, 0..) |*p, i| {
-        const e0 = endpoints[subset_of[i] * 2];
-        const e1 = endpoints[subset_of[i] * 2 + 1];
-        var color_index = index[i];
-        var color_weights = weightTable(info.index_bits);
-        var alpha_index = index[i];
-        var alpha_weights = color_weights;
-        if (info.index2_bits > 0) {
-            alpha_index = index2[i];
-            alpha_weights = weightTable(info.index2_bits);
-            if (index_selection == 1) {
-                std.mem.swap(u32, &color_index, &alpha_index);
-                std.mem.swap([]const u32, &color_weights, &alpha_weights);
-            }
+    // All 16 pixels at once, one lane each.
+    const Lanes = @Vector(16, u32);
+    const subset: @Vector(16, u8) = subset_of;
+    var channels: [4]Lanes = undefined;
+    for (&channels, 0..) |*channel, c| {
+        var lo: Lanes = @splat(endpoints[0][c]);
+        var hi: Lanes = @splat(endpoints[1][c]);
+        for (1..info.subsets) |s| {
+            const in_subset = subset == @as(@Vector(16, u8), @splat(@intCast(s)));
+            lo = @select(u32, in_subset, @as(Lanes, @splat(endpoints[s * 2][c])), lo);
+            hi = @select(u32, in_subset, @as(Lanes, @splat(endpoints[s * 2 + 1][c])), hi);
         }
-        for (0..3) |c| p[c] = interpolate(e0[c], e1[c], color_weights[color_index]);
-        p[3] = interpolate(e0[3], e1[3], alpha_weights[alpha_index]);
-        if (rotation != 0) std.mem.swap(u8, &p[3], &p[rotation - 1]);
+        const w = if (c < 3) color_weights else alpha_weights;
+        const sum = lo * (@as(Lanes, @splat(64)) - w) + hi * w + @as(Lanes, @splat(32));
+        channel.* = sum >> @splat(6);
+    }
+    if (rotation != 0) std.mem.swap(Lanes, &channels[3], &channels[rotation - 1]);
+    var planes: [4][16]u8 = undefined;
+    for (&planes, channels) |*plane, channel| plane.* = @as(@Vector(16, u8), @intCast(channel));
+    var out: [16][4]u8 = undefined;
+    for (&out, planes[0], planes[1], planes[2], planes[3]) |*p, red, green, blue, alpha| {
+        p.* = .{ red, green, blue, alpha };
     }
     return out;
 }
