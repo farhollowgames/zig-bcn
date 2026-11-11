@@ -386,13 +386,24 @@ pub fn decodeBlock(block: *const [block_bytes]u8, format: Format) [16][3]u16 {
     var code: u5 = @intCast(reader.take(2));
     if (code > 1) code |= @intCast(reader.take(3) << 2);
     const mode_index = modeOf(code) orelse return @splat(@splat(0));
+    // One decoder per mode and format, so each reads its header in straight
+    // lines.
+    return switch (format) {
+        inline else => |f| switch (mode_index) {
+            inline 0...modes.len - 1 => |m| decodeMode(f, m, &reader),
+            else => unreachable,
+        },
+    };
+}
+
+fn decodeMode(comptime format: Format, comptime mode_index: u4, reader: *BitReader) [16][3]u16 {
     const mode = modes[mode_index];
 
     // endpoint[ep][ch], as read.
     var ep: [4][3]i32 = @splat(@splat(0));
-    for (mode.runs) |r| {
+    inline for (mode.runs) |r| {
         var v = reader.take(r.count);
-        if (r.reversed) v = @as(u32, @bitReverse(@as(u16, @intCast(v)))) >> @intCast(16 - @as(u6, r.count));
+        if (r.reversed) v = @as(u32, @bitReverse(@as(u16, @intCast(v)))) >> (16 - r.count);
         ep[r.ep][r.ch] |= @intCast(v << r.shift);
     }
     const partition_index: u32 = if (mode.regions == 2) reader.take(5) else 0;
@@ -401,7 +412,9 @@ pub fn decodeBlock(block: *const [block_bytes]u8, format: Format) [16][3]u16 {
     for (0..3) |c| {
         if (format == .signed) ep[0][c] = signExtend(ep[0][c], mode.base_bits);
         for (1..endpoints) |e| {
-            if (mode.transformed or format == .signed) ep[e][c] = signExtend(ep[e][c], mode.delta_bits[c]);
+            if (mode.transformed or format == .signed) {
+                ep[e][c] = signExtend(ep[e][c], mode.delta_bits[c]);
+            }
             if (mode.transformed) {
                 const mask = (@as(i32, 1) << mode.base_bits) - 1;
                 ep[e][c] = (ep[e][c] + ep[0][c]) & mask;
@@ -411,28 +424,73 @@ pub fn decodeBlock(block: *const [block_bytes]u8, format: Format) [16][3]u16 {
         for (0..endpoints) |e| ep[e][c] = unquantize(ep[e][c], mode.base_bits, format);
     }
 
+    // The indices fill the rest of the block, `index_bits` per texel and one
+    // fewer for each region's anchor texel; all 16 texels are decoded at
+    // once, one lane each.
     const weights: []const u32 = if (mode.regions == 1)
         &.{ 0, 4, 9, 13, 17, 21, 26, 30, 34, 38, 43, 47, 51, 55, 60, 64 }
     else
         &.{ 0, 9, 18, 27, 37, 46, 55, 64 };
-    const index_bits: u5 = if (mode.regions == 1) 4 else 3;
-    const part = texcomp_bc6h.partition(partition_index);
-    const anchor = texcomp_bc6h.part2_anchor[partition_index];
-
-    var out: [16][3]u16 = undefined;
-    for (0..16) |i| {
-        const region: usize = if (mode.regions == 1) 0 else part[i];
-        const is_anchor = i == 0 or (mode.regions == 2 and i == anchor);
-        const index = reader.take(if (is_anchor) index_bits - 1 else index_bits);
-        const w: i32 = @intCast(weights[index]);
-        for (0..3) |c| {
-            const a = ep[region * 2][c];
-            const b = ep[region * 2 + 1][c];
-            out[i][c] = finish((a * (64 - w) + b * w + 32) >> 6, format);
-        }
+    const index_bits: u32 = if (mode.regions == 1) 4 else 3;
+    comptime {
+        var header_bits: u32 = if (mode_index < 2) 2 else 5;
+        for (mode.runs) |r| header_bits += r.count;
+        if (mode.regions == 2) header_bits += 5;
+        assert(header_bits + 16 * index_bits - mode.regions == 128);
     }
-    assert(reader.bits == 0);
+    const indices: u64 = @intCast(reader.bits);
+    // One past the texels for one region, so no lane matches.
+    const anchor: u32 = if (mode.regions == 1) 16 else texcomp_bc6h.part2_anchor[partition_index];
+    const lane = std.simd.iota(u32, 16);
+    const zeros: @Vector(16, u32) = @splat(0);
+    const ones: @Vector(16, u32) = @splat(1);
+    const anchors: @Vector(16, u32) = @splat(anchor);
+    const start = lane * @as(@Vector(16, u32), @splat(index_bits)) -
+        @select(u32, lane > zeros, ones, zeros) - @select(u32, lane > anchors, ones, zeros);
+    const width = @as(@Vector(16, u32), @splat(index_bits)) -
+        @select(u32, lane == zeros, ones, zeros) - @select(u32, lane == anchors, ones, zeros);
+    const one_bit: @Vector(16, u64) = @splat(1);
+    const index_mask = (one_bit << @intCast(width)) - one_bit;
+    const index = @as(@Vector(16, u64), @splat(indices)) >> @intCast(start) & index_mask;
+    const index_array: [16]u64 = index;
+    var w_array: [16]i32 = undefined;
+    for (&w_array, index_array) |*wi, ii| wi.* = @intCast(weights[@intCast(ii)]);
+    const w: @Vector(16, i32) = w_array;
+
+    const Lanes = @Vector(16, i32);
+    const part: @Vector(16, u8) = texcomp_bc6h.partition(partition_index).*;
+    const second: @Vector(16, bool) = if (mode.regions == 1)
+        @splat(false)
+    else
+        part != @as(@Vector(16, u8), @splat(0));
+    var channels: [3]@Vector(16, u16) = undefined;
+    for (0..3) |c| {
+        const a = @select(i32, second, @as(Lanes, @splat(ep[2][c])), @as(Lanes, @splat(ep[0][c])));
+        const b = @select(i32, second, @as(Lanes, @splat(ep[3][c])), @as(Lanes, @splat(ep[1][c])));
+        const sum = a * (@as(Lanes, @splat(64)) - w) + b * w + @as(Lanes, @splat(32));
+        channels[c] = finishLanes(format, sum >> @splat(6));
+    }
+    const planes: [3][16]u16 = .{ channels[0], channels[1], channels[2] };
+    var out: [16][3]u16 = undefined;
+    for (&out, planes[0], planes[1], planes[2]) |*texel, r, g, b| texel.* = .{ r, g, b };
     return out;
+}
+
+/// `finish` on every lane.
+fn finishLanes(comptime format: Format, v: @Vector(16, i32)) @Vector(16, u16) {
+    switch (format) {
+        .unsigned => return @intCast((v * @as(@Vector(16, i32), @splat(31))) >> @splat(6)),
+        .signed => {
+            const Unsigned = @Vector(16, u32);
+            const zeros: Unsigned = @splat(0);
+            const mag = (@abs(v) * @as(Unsigned, @splat(31))) >> @splat(5);
+            // A negative value that scales to zero decodes as +0.
+            const below_zero = v < @as(@Vector(16, i32), @splat(0));
+            const none: @Vector(16, bool) = @splat(false);
+            const negative = @select(bool, below_zero, mag != zeros, none);
+            return @intCast(mag | @select(u32, negative, @as(Unsigned, @splat(0x8000)), zeros));
+        },
+    }
 }
 
 test "a flat block round-trips within half precision" {
