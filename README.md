@@ -1,19 +1,20 @@
 # zig-bcn
 
-Tracks stb_dxt 1.12, bc7e from basis_universal v2_50 and texcomp from TinyEXR
-`644148d` · Zig 0.17 · [status](STATUS.md)
+Ported from stb_dxt 1.12 (`2c980bb`), bc7e from basis_universal v2_50
+(`9bebe16`) and texcomp from TinyEXR (`644148d`) · Zig 0.17.0 · [status](STATUS.md)
+
+This port is not affiliated with or reviewed by the original authors. Its
+code was written with AI assistance for Farhollow Games, and is only machine
+verified. See [the tests](doc/TESTING.md) and [parity with the original](doc/parity.md).
 
 ## What it is
 
 A Zig port of three block-compression (BCn) texture encoders: stb_dxt for
 BC1, BC3, BC4 and BC5, the scalar bc7e from basis_universal for BC7, and
 texcomp from TinyEXR for BC6H. It adds a decoder for every format and a
-second BC6H encoder of its own. The originals and their authors are listed
-under [Licence and references](#licence-and-references).
-
-This port is not affiliated with or reviewed by the original authors. Its
-code was written with AI assistance for Farhollow Games, and is only machine
-verified. See [the tests](doc/TESTING.md) and [parity with the original](doc/parity.md).
+second BC6H encoder of its own. It is pure Zig, with no dependencies beyond
+the standard library, and links no libc or libc++. The originals are listed
+under [References](#references).
 
 ## Features
 
@@ -33,8 +34,7 @@ verified. See [the tests](doc/TESTING.md) and [parity with the original](doc/par
 - `bcn.Encoding`: every format and its settings behind one interface, with
   the Vulkan and DXGI format numbers, and encoding in bands of block rows on
   several threads through `std.Io`.
-- Pure Zig, with no libc or libc++. Nothing allocates: the caller passes the
-  output buffer.
+- Nothing allocates: the caller passes the output buffer.
 
 ## Install
 
@@ -42,7 +42,7 @@ verified. See [the tests](doc/TESTING.md) and [parity with the original](doc/par
 zig fetch --save git+https://github.com/farhollowgames/zig-bcn#v0.3.0
 ```
 
-`v0.3.0` is the latest release.
+`v0.3.0` is the latest release. The package needs Zig 0.17.0.
 
 In `build.zig`:
 
@@ -73,8 +73,10 @@ pub fn roundTrip(gpa: std.mem.Allocator, rgba: []const u8, width: u32, height: u
 }
 ```
 
-[`doc/API.md`](doc/API.md) describes the API of each format and of
-`bcn.Encoding`.
+Each format has its namespace (`bcn.bc1`, `bcn.bc3`, `bcn.bc4`, `bcn.bc5`,
+`bcn.bc7`, `bcn.bc6h`). [`doc/API.md`](doc/API.md) describes the API of each
+format and of `bcn.Encoding`, and [`STATUS.md`](STATUS.md) maps every
+function and option of the originals to its counterpart.
 
 ## Differences from the original
 
@@ -100,12 +102,22 @@ The reasons are in [`doc/parity.md`](doc/parity.md) and
 - bc7e's tables are built at compile time, so there is no `bc7e_compress_block_init`.
 - texcomp's options struct is a `Format` argument; a zero width or height is asserted, where texcomp returns size 0.
 
-## Not included
+## Left out
 
-The parts of the originals that are left out, each with its reason, are listed in
-[`STATUS.md`](STATUS.md#left-out-approved).
+The parts of the originals that are left out, each with its reason, are
+listed in [`STATUS.md`](STATUS.md#left-out-approved). In short:
 
-## Testing and benchmarks
+- C linkage and configuration macros (`STB_DXT_STATIC`, `STBD_FABS`,
+  `STB_DXT_IMPLEMENTATION`), `BC7E_NON_DETERMINISTIC` (0 in the original,
+  and so in the port) and the unused `HERE()` debug macro.
+- texcomp's kernel dispatch (`tc_backend_*`): zig-bcn has one search.
+- texcomp's DDS writers, and its encoders for other formats than the ones
+  chosen (its BC1, BC3, BC5 and BC7 encoders, ETC2, EAC, ASTC and the
+  rest).
+- texcomp's `TC_ERROR_INVALID_ARGUMENT`: zig-bcn asserts instead, since
+  slices carry their lengths.
+
+## Tests
 
 `zig build test` runs 61 tests: 15 unit tests and 46 tests that build the
 originals from `reference/`. Most of the 46 run the original and the port
@@ -113,43 +125,59 @@ on the same inputs and compare every output byte, error measure and flag;
 `bc6h.Quality.high`, which has no original, is checked against what its
 blocks decode to.
 
-Port time against original time, one thread:
-
-| feature | port vs original |
-| --- | ---: |
-| BC1 encode, normal | 13% faster |
-| BC7 encode, basic | 30% slower |
-| BC6H encode, unsigned | 37% faster |
-| BC7 decode | 55% faster |
-| BC6H decode, unsigned | 60% faster |
-
-AMD Ryzen 9 9950X3D, Linux 7.3, Zig 0.17.0, at commit `3ee9b14`, with a
-load average of 2.3 to 3.0 on 32 hardware threads; the median of three
-runs.
-
 - [`doc/TESTING.md`](doc/TESTING.md): how the tests compare the port with
   the originals, and what this repository's tests cover.
-- [`doc/BENCHMARKS.md`](doc/BENCHMARKS.md): ratios and full tables: every row, the flags on both
+- [`doc/parity.md`](doc/parity.md): which test checks each feature of the
+  originals, and on what inputs.
+
+## Speed
+
+Port time against original time, one thread, over every block of the test
+image set:
+
+| feature | time, port / original | port vs original |
+| --- | ---: | ---: |
+| BC1 encode, normal | 0.87 | 13% faster |
+| BC7 encode, basic | 1.30 | 30% slower |
+| BC6H encode, unsigned | 0.63 | 37% faster |
+| BC7 decode | 0.45 | 55% faster |
+| BC6H decode, unsigned | 0.40 | 60% faster |
+
+The BC7 encoder is slower than bc7e at every level, by 18% to 30%.
+
+AMD Ryzen 9 9950X3D, one thread, Linux 7.3, Zig 0.17.0 ReleaseFast against
+Zig's clang `-O3`, at commit `3ee9b14`; each row is from the run with the
+median time ratio of three; a load average of 2.3 to 3.0 on 32 hardware
+threads.
+
+- [`doc/BENCHMARKS.md`](doc/BENCHMARKS.md): every row, the flags on both
   sides, the run counts and the command.
 
-## Licence and references
+## Licence
 
-zig-bcn is licensed under the Apache License 2.0 ([`LICENSE`](LICENSE)),
-Copyright 2026 Farhollow Games. [`NOTICE`](NOTICE) holds the originals'
-copyright notices and licence texts, copied as they are:
+Apache License 2.0 ([`LICENSE`](LICENSE)), the licence of bc7e and texcomp;
+stb_dxt, offered as MIT or public domain, is used under the MIT License.
+zig-bcn is an altered version of the originals: the code is rewritten in
+Zig, with its own interface. [`NOTICE`](NOTICE) holds "Copyright 2026
+Farhollow Games" and the originals' copyright notices and licence texts,
+copied as they are.
 
-- **stb_dxt** 1.12, by Fabian "ryg" Giesen, ported to C by Sean Barrett, in
-  [stb](https://github.com/nothings/stb). MIT or public domain; used under
-  the MIT License. Copyright (c) 2017 Sean Barrett.
+## References
+
+- **stb_dxt** 1.12 (`2c980bb`), by Fabian "ryg" Giesen, ported to C by Sean
+  Barrett, in [stb](https://github.com/nothings/stb). MIT or public domain.
+  Copyright (c) 2017 Sean Barrett.
 - **bc7e**, by Richard Geldreich, as ported to scalar C++ in
   [basis_universal](https://github.com/BinomialLLC/basis_universal) by
-  Binomial LLC. Apache License 2.0. Copyright (C) 2018-2020 Binomial LLC;
-  Copyright 2019-2026 Binomial LLC.
+  Binomial LLC, tag `v2_50` (`9bebe16`). Apache License 2.0. Copyright (C)
+  2018-2020 Binomial LLC; Copyright 2019-2026 Binomial LLC.
 - **texcomp**, in [TinyEXR](https://github.com/syoyo/tinyexr) by Syoyo
-  Fujita and the TinyEXR authors. Apache License 2.0. Copyright 2014-2026
-  Syoyo Fujita and TinyEXR authors. Its BC6H partition table and block
-  layout mirror [bcdec](https://github.com/iOrange/bcdec) by Sergii Kudlai
-  (MIT or the Unlicense), Copyright (c) 2022 Sergii Kudlai.
+  Fujita and the TinyEXR authors, commit `644148d`. Apache License 2.0.
+  Copyright 2014-2026 Syoyo Fujita and TinyEXR authors. Its BC6H partition
+  table and block layout mirror [bcdec](https://github.com/iOrange/bcdec) by
+  Sergii Kudlai (MIT or the Unlicense), Copyright (c) 2022 Sergii Kudlai.
+- The three originals are copied into `reference/` for the tests and the
+  benchmark only.
 - The formats are specified in the Khronos
   [Data Format Specification](https://registry.khronos.org/DataFormat/specs/1.3/dataformat.1.3.html)
   (S3TC, RGTC and BPTC).
