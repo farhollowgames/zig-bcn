@@ -113,16 +113,15 @@ on the same inputs and compare every output byte, error measure and flag;
 `bc6h.Quality.high`, which has no original, is checked against what its
 blocks decode to.
 
-Time taken by zig-bcn divided by time taken by the original, one thread
-(below 1, zig-bcn takes less time):
+Time taken by zig-bcn against the original's, one thread:
 
-| feature | zig-bcn / original |
+| feature | port vs original |
 | --- | ---: |
-| BC1 encode, normal | 0.87 |
-| BC7 encode, basic | 1.30 |
-| BC6H encode, unsigned | 0.63 |
-| BC7 decode | 0.45 |
-| BC6H decode, unsigned | 0.40 |
+| BC1 encode, normal | 13% faster |
+| BC7 encode, basic | 30% slower |
+| BC6H encode, unsigned | 37% faster |
+| BC7 decode | 55% faster |
+| BC6H decode, unsigned | 60% faster |
 
 AMD Ryzen 9 9950X3D, Linux 7.3, Zig 0.17.0, at commit `3ee9b14`, with a
 load average of 2.3 to 3.0 on 32 hardware threads; the median of three
@@ -130,7 +129,7 @@ runs.
 
 - [`doc/TESTING.md`](doc/TESTING.md): how the tests compare the port with
   the originals, and what this repository's tests cover.
-- [`doc/BENCHMARKS.md`](doc/BENCHMARKS.md): every row, the flags on both
+- [`doc/BENCHMARKS.md`](doc/BENCHMARKS.md): ratios and full tables: every row, the flags on both
   sides, the run counts and the command.
 
 ## Licence and references
