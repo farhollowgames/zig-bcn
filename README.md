@@ -11,9 +11,9 @@ texcomp from TinyEXR for BC6H. It adds a decoder for every format and a
 second BC6H encoder of its own. The originals and their authors are listed
 under [Licence and references](#licence-and-references).
 
-This port is not affiliated with or reviewed by the authors of the
-originals. Its code was written with AI assistance and has not yet been
-reviewed by a person.
+This port is not affiliated with or reviewed by the original authors. Its
+code was written with AI assistance for Farhollow Games, and is only machine
+verified. See [the tests](doc/TESTING.md) and [parity with the original](doc/parity.md).
 
 ## Features
 
