@@ -148,7 +148,7 @@ The decoders are given random blocks, which reach the reserved BC6H mode
 codes and the reserved BC7 mode, and every BC7 first byte; their output
 must equal texcomp's (the reserved BC7 mode decodes to transparent black).
 Argument errors are asserted, not returned (see
-[`STATUS.md`](../STATUS.md#left-out-for-the-author-to-approve)): a short
+[`STATUS.md`](../STATUS.md#left-out-approved)): a short
 buffer or stride panics in Debug and ReleaseSafe and is undefined in
 ReleaseFast. zig-bcn has no contract tests for those asserts.
 

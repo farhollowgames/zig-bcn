@@ -113,7 +113,7 @@ on the same inputs and compare every output byte, error measure and flag;
 `bc6h.Quality.high`, which has no original, is checked against what its
 blocks decode to.
 
-Time taken by zig-bcn against the original's, one thread:
+Port time against original time, one thread:
 
 | feature | port vs original |
 | --- | ---: |
